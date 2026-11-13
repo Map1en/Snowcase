@@ -1,0 +1,16 @@
+[package]
+name = "snowcase-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+diesel = { workspace = true }
+diesel_migrations = { workspace = true }
+snowcase-formats = { workspace = true }
+libsqlite3-sys = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

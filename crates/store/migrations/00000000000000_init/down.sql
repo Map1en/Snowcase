@@ -1,0 +1,12 @@
+DROP TABLE item_folder;
+DROP TABLE folder;
+DROP TABLE item_tag;
+DROP TABLE tag;
+DROP TABLE item_image;
+DROP TABLE version_file;
+DROP TABLE blob_location;
+DROP TABLE blob;
+DROP TABLE version;
+DROP TABLE item_source;
+DROP TABLE item;
+DROP TABLE media;

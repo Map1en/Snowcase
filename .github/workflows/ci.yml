@@ -33,3 +33,17 @@ jobs:
                   if ($process.ExitCode -ne 0) {
                       throw "Snowcase exited with code $($process.ExitCode)"
                   }
+
+    schema:
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: dtolnay/rust-toolchain@stable
+            - name: Install Diesel CLI
+              run: cargo install diesel_cli --version 2.3.0 --no-default-features --features sqlite-bundled --locked
+            - name: Check schema.rs matches migrations
+              shell: bash
+              working-directory: crates/store
+              run: |
+                  diesel migration run --database-url "$RUNNER_TEMP/schema.db"
+                  diesel print-schema --database-url "$RUNNER_TEMP/schema.db" | diff - src/schema.rs
