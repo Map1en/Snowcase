@@ -21,7 +21,7 @@ fn open(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<LibraryView>) {
                 ..Default::default()
             },
             cx,
-            |_, cx| cx.new(|_| LibraryView::default()),
+            |window, cx| cx.new(|cx| LibraryView::new(window, cx)),
         )
         .expect("open test window");
         (window, view)
@@ -109,4 +109,31 @@ fn dropping_the_same_file_twice_keeps_one_row(cx: &mut TestAppContext) {
     cx.run_until_parked();
 
     assert_eq!(row_count(window, cx), 1);
+}
+
+#[gpui_kit::test]
+fn table_layout_and_scope_filters_show_the_matching_assets(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let archive = dir.path().join("hair.zip");
+    let cover = dir.path().join("cover.png");
+    fs::write(&archive, b"PK\x03\x04").unwrap();
+    fs::write(&cover, b"\x89PNG\r\n\x1a\n").unwrap();
+    let (window, view) = open(cx);
+    drop_paths(window, vec![archive, cover], cx);
+    cx.run_until_parked();
+
+    cx.update_window(window, |_, window, cx| {
+        window.render_frame(cx);
+        window.click("layout-table", cx);
+    })
+    .unwrap();
+    view.read_with(cx, |view, _| assert_eq!(view.layout, super::Layout::Table));
+    assert_eq!(row_count(window, cx), 2);
+
+    cx.update_window(window, |_, window, cx| window.click("scope-kind-Image", cx))
+        .unwrap();
+    assert_eq!(row_count(window, cx), 1);
+    cx.update_window(window, |_, window, cx| window.click("scope-untagged", cx))
+        .unwrap();
+    assert_eq!(row_count(window, cx), 2);
 }

@@ -1,10 +1,13 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod library_view;
+mod settings_view;
+mod shell;
+mod tools_view;
 
 use gpui_kit::*;
 
-use crate::library_view::LibraryView;
+use crate::shell::Shell;
 
 fn main() {
     let smoke = std::env::args().any(|arg| arg == "--smoke");
@@ -26,7 +29,7 @@ fn main() {
                 }),
                 window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
                     None,
-                    size(px(1100.), px(720.)),
+                    size(px(1280.), px(800.)),
                     cx,
                 ))),
                 ..Default::default()
@@ -35,7 +38,7 @@ fn main() {
                 if smoke {
                     window.on_next_frame(|_, cx| cx.quit());
                 }
-                cx.new(|_| LibraryView::default())
+                cx.new(|cx| Shell::new(window, cx))
             })
             .expect("failed to open the main window");
         });
