@@ -129,9 +129,9 @@ legal entity, or if Your employer may own rights to Your work, do not sign this
 Individual Contributor License Agreement unless You have authority or permission
 to do so.
 
-Please contact the Maintainer through a GitHub issue to arrange a Corporate
-Contributor License Agreement before contributing on behalf of a company or other
-legal entity.
+Please contact the Maintainer through the Project's Discord server or a GitHub
+issue to arrange a Corporate Contributor License Agreement before contributing
+on behalf of a company or other legal entity.
 
 ## 9. Signing
 

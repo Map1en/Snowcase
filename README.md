@@ -1,6 +1,6 @@
 # Snowcase
 
-A local asset manager built for the BOOTH ecosystem. It also handles packages already on your disk and items bought from any other website. See what's inside every package, remember where you got it and where you use it, and put away what you no longer need, with AI helping you organize and search.
+A local asset manager built for the BOOTH ecosystem. It also handles packages already on your disk and items bought from any other website. See what's inside every package, remember where you got it and where you use it, and put away what you no longer need. With AI by your side for every step of your VRChat avatar life, from shopping to customizing to uploading.
 
 > **Status: early development.** Nothing is usable yet.
 
@@ -39,6 +39,10 @@ Windows first. macOS and Linux are planned.
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Contributors must sign the [CLA](CLA.md).
+
+## Community
+
+Join us on [Discord](https://discord.gg/fehKP3SVPN). The server is shared with VRCX-0 for now.
 
 ## License
 

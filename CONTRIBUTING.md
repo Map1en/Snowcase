@@ -27,3 +27,7 @@ The CLA does not transfer copyright ownership. You keep the copyright to your ow
 When you open a PR, the CLA bot comments with instructions and you sign by posting a single comment. You only need to sign once.
 
 If your employer may own rights to your work, or if you are contributing on behalf of a company or organization, please contact the maintainer before signing the individual CLA.
+
+## Questions
+
+Questions and discussion: [Discord](https://discord.gg/fehKP3SVPN).
