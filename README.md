@@ -1,4 +1,10 @@
+<div align="center">
+
 # Snowcase
+
+English | [简体中文](README.zh-CN.md) | [日本語](README.ja-JP.md) | [한국어](README.ko-KR.md)
+
+</div>
 
 A local asset manager built for the BOOTH ecosystem. It also handles packages already on your disk and items bought from any other website. See what's inside every package, remember where you got it and where you use it, and put away what you no longer need. With AI by your side for every step of your VRChat avatar life, from shopping to customizing to uploading.
 
