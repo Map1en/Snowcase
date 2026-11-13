@@ -1,0 +1,14 @@
+[package]
+name = "snowcase"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+snowcase-core = { workspace = true }
+gpui-kit = { workspace = true }
+
+[dev-dependencies]
+gpui-kit = { workspace = true, features = ["test-support"] }
+tempfile = { workspace = true }

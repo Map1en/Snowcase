@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+repository = "https://github.com/Map1en/Snowcase"
+
+[workspace.dependencies]
+snowcase-formats = { path = "crates/formats" }
+snowcase-core = { path = "crates/core" }
+thiserror = "2"
+tempfile = "3"
+gpui-kit = "0.9"

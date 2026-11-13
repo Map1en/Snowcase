@@ -1,0 +1,35 @@
+name: CI
+
+on:
+    push:
+        branches: [master]
+    pull_request:
+
+concurrency:
+    group: ci-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    windows:
+        runs-on: windows-latest
+        steps:
+            - uses: actions/checkout@v7
+            - uses: dtolnay/rust-toolchain@stable
+            - uses: Swatinem/rust-cache@v2
+              with:
+                  save-if: ${{ github.ref == 'refs/heads/master' }}
+            - name: Test
+              run: cargo test --workspace --locked
+            - name: Build
+              run: cargo build -p snowcase --locked
+            - name: Smoke launch
+              shell: pwsh
+              run: |
+                  $process = Start-Process -FilePath target/debug/snowcase.exe -ArgumentList '--smoke' -PassThru
+                  if (-not $process.WaitForExit(60000)) {
+                      $process.Kill()
+                      throw 'Snowcase did not exit within 60 seconds'
+                  }
+                  if ($process.ExitCode -ne 0) {
+                      throw "Snowcase exited with code $($process.ExitCode)"
+                  }
