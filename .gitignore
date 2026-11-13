@@ -1,0 +1,15 @@
+target/
+node_modules/
+dist/
+.idea/
+.vscode/
+*.log
+.env.local
+
+docs/
+AGENTS.md
+CLAUDE.md
+.claude/
+.agents/
+.codex
+.mcp.json
