@@ -1,10 +1,6 @@
-<div align="center">
-
 # Snowcase
 
 [English](README.md) | 简体中文 | [日本語](README.ja-JP.md) | [한국어](README.ko-KR.md)
-
-</div>
 
 为 BOOTH 生态打造的本地资产管理器，硬盘里已有的包、在其他网站买的东西也能一起管。包里有什么一眼看清，从哪买的、用在哪个模型上都记得住，不用的东西收起来。从选购、改模到上传，AI 陪你玩转 VRChat 模型。
 
