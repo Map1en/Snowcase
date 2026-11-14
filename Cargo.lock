@@ -6788,8 +6788,10 @@ name = "snowcase"
 version = "0.1.0"
 dependencies = [
  "gpui-kit",
+ "rust-i18n",
  "snowcase-core",
  "snowcase-testing",
+ "sys-locale",
 ]
 
 [[package]]

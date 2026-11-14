@@ -5,6 +5,7 @@ use snowcase_testing::fixtures::{self, Fixture};
 use snowcase_testing::ui::{click, count, double_click, drop_paths, exists, open, press, type_into};
 
 use super::{Layout, LibraryView};
+use crate::i18n;
 use crate::library_store::LibraryStore;
 
 fn open_library(
@@ -151,4 +152,22 @@ fn double_clicking_a_card_opens_the_item_page_and_back_returns(cx: &mut TestAppC
     click(window, "back", cx);
     assert!(!exists(window, "item-page", cx));
     assert!(exists(window, "filters", cx));
+}
+
+#[gpui_kit::test]
+fn switching_language_relabels_inputs_and_table_rows(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::library(3, 10);
+    let (window, view) = open_library(library, cx);
+    click(window, "layout-table", cx);
+    let placeholder = |view: &LibraryView, cx: &gpui_kit::App| view.search.read(cx).presentation().placeholder().to_string();
+    view.read_with(cx, |view, cx| assert_eq!(placeholder(view, cx), "Search titles, tags and files"));
+
+    cx.update(|cx| i18n::set_locale("ja", cx));
+
+    assert!(exists(window, "asset-table", cx));
+    view.read_with(cx, |view, cx| {
+        assert_eq!(placeholder(view, cx), "タイトル・タグ・ファイルを検索");
+        let statuses: Vec<_> = view.table.read(cx).delegate().rows.iter().map(|row| row.status().to_string()).collect();
+        assert!(statuses.iter().all(|status| status == "未整理" || status == "登録済み"));
+    });
 }

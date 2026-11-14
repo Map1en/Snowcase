@@ -16,6 +16,8 @@ snowcase-testing = { path = "crates/testing" }
 thiserror = "2"
 tempfile = "3"
 gpui-kit = "0.9"
+rust-i18n = "4.2"
+sys-locale = "0.3"
 diesel = { version = "2.4", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = { version = "2.4", features = ["sqlite"] }
 libsqlite3-sys = { version = "0.40", features = ["bundled"] }

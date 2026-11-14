@@ -1,9 +1,11 @@
+use gpui_kit::component::button::*;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use snowcase_core::StoreError;
 use snowcase_core::library::Library;
 
+use crate::i18n::{self, LOCALES, tr};
 use crate::library_store::LibraryStore;
 use crate::library_view::LibraryView;
 
@@ -36,7 +38,7 @@ impl Shell {
         &self,
         id: &'static str,
         icon: IconName,
-        label: &'static str,
+        label: SharedString,
         page: Page,
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
@@ -80,15 +82,15 @@ impl Render for Shell {
             .border_r_1()
             .border_color(theme.border)
             .bg(theme.sidebar)
-            .child(self.nav_item("nav-library", IconName::LayoutDashboard, "Library", Page::Library, cx))
-            .child(self.nav_item("nav-tools", IconName::Cpu, "Tools", Page::Tools, cx))
+            .child(self.nav_item("nav-library", IconName::LayoutDashboard, tr!(cx, "nav.library"), Page::Library, cx))
+            .child(self.nav_item("nav-tools", IconName::Cpu, tr!(cx, "nav.tools"), Page::Tools, cx))
             .child(div().flex_1())
-            .child(self.nav_item("nav-settings", IconName::Settings, "Settings", Page::Settings, cx));
+            .child(self.nav_item("nav-settings", IconName::Settings, tr!(cx, "nav.settings"), Page::Settings, cx));
 
         let page = match self.page {
             Page::Library => self.library_view.clone().into_any_element(),
-            Page::Tools => placeholder("tools", "Tools", theme),
-            Page::Settings => placeholder("settings", "Settings", theme),
+            Page::Tools => placeholder("tools", tr!(cx, "nav.tools"), theme),
+            Page::Settings => settings(cx),
         };
 
         h_flex()
@@ -100,7 +102,7 @@ impl Render for Shell {
     }
 }
 
-fn placeholder(id: &'static str, title: &'static str, theme: &Theme) -> AnyElement {
+fn placeholder(id: &'static str, title: SharedString, theme: &Theme) -> AnyElement {
     v_flex()
         .id(id)
         .test_support()
@@ -115,6 +117,38 @@ fn placeholder(id: &'static str, title: &'static str, theme: &Theme) -> AnyEleme
                 .border_1()
                 .border_dashed()
                 .border_color(theme.border),
+        )
+        .into_any_element()
+}
+
+fn settings(cx: &App) -> AnyElement {
+    let current = i18n::locale(cx);
+    let languages = ButtonGroup::new("locale")
+        .outline()
+        .compact()
+        .children(LOCALES.iter().map(|(code, name)| {
+            Button::new(SharedString::from(format!("locale-{code}")))
+                .label(*name)
+                .selected(*code == current)
+        }))
+        .on_click(|selected: &Vec<usize>, _, cx| {
+            if let Some((code, _)) = selected.first().and_then(|ix| LOCALES.get(*ix)) {
+                i18n::set_locale(code, cx);
+            }
+        });
+    v_flex()
+        .id("settings")
+        .test_support()
+        .size_full()
+        .gap_4()
+        .p_6()
+        .child(div().text_lg().font_semibold().child(tr!(cx, "nav.settings")))
+        .child(
+            h_flex()
+                .gap_4()
+                .items_center()
+                .child(div().text_sm().child(tr!(cx, "settings.language")))
+                .child(languages),
         )
         .into_any_element()
 }

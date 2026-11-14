@@ -4,7 +4,7 @@ use snowcase_core::library::Library;
 
 pub struct LibraryStore {
     library: Option<Library>,
-    error: Option<String>,
+    error: Option<StoreError>,
 }
 
 impl LibraryStore {
@@ -16,7 +16,7 @@ impl LibraryStore {
             },
             Err(error) => Self {
                 library: None,
-                error: Some(error.to_string()),
+                error: Some(error),
             },
         }
     }
@@ -25,8 +25,8 @@ impl LibraryStore {
         self.library.as_ref()
     }
 
-    pub fn error(&self) -> Option<&str> {
-        self.error.as_deref()
+    pub fn error(&self) -> Option<&StoreError> {
+        self.error.as_ref()
     }
 
     pub fn change<T>(
@@ -35,9 +35,9 @@ impl LibraryStore {
         change: impl FnOnce(&mut Library) -> Result<T, StoreError>,
     ) -> Option<T> {
         let library = self.library.as_mut()?;
-        let result = change(library);
-        self.error = result.as_ref().err().map(ToString::to_string);
+        self.error = None;
+        let value = change(library).map_err(|error| self.error = Some(error)).ok();
         cx.notify();
-        result.ok()
+        value
     }
 }

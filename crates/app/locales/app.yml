@@ -1,0 +1,241 @@
+_version: 2
+nav.library:
+  en: Library
+  zh-CN: 资产库
+  zh-TW: 資產庫
+  ja: ライブラリ
+  ko: 라이브러리
+nav.tools:
+  en: Tools
+  zh-CN: 工具
+  zh-TW: 工具
+  ja: ツール
+  ko: 도구
+nav.settings:
+  en: Settings
+  zh-CN: 设置
+  zh-TW: 設定
+  ja: 設定
+  ko: 설정
+settings.language:
+  en: Language
+  zh-CN: 语言
+  zh-TW: 語言
+  ja: 言語
+  ko: 언어
+scope.all:
+  en: All items
+  zh-CN: 全部
+  zh-TW: 全部
+  ja: すべて
+  ko: 전체
+folder.new:
+  en: New folder
+  zh-CN: 新建文件夹
+  zh-TW: 新增資料夾
+  ja: 新しいフォルダー
+  ko: 새 폴더
+folder.new_name:
+  en: New folder %{n}
+  zh-CN: 新建文件夹 %{n}
+  zh-TW: 新資料夾 %{n}
+  ja: 新しいフォルダー %{n}
+  ko: 새 폴더 %{n}
+search.placeholder:
+  en: Search titles, tags and files
+  zh-CN: 搜索标题、标签和文件
+  zh-TW: 搜尋標題、標籤和檔案
+  ja: タイトル・タグ・ファイルを検索
+  ko: 제목, 태그, 파일 검색
+tag.placeholder:
+  en: Add a tag
+  zh-CN: 添加标签
+  zh-TW: 新增標籤
+  ja: タグを追加
+  ko: 태그 추가
+folder.placeholder:
+  en: Add to a folder
+  zh-CN: 添加到文件夹
+  zh-TW: 加入資料夾
+  ja: フォルダーに追加
+  ko: 폴더에 추가
+sort.newest:
+  en: Newest
+  zh-CN: 最新
+  zh-TW: 最新
+  ja: 新しい順
+  ko: 최신순
+layout.grid:
+  en: Grid
+  zh-CN: 网格
+  zh-TW: 網格
+  ja: グリッド
+  ko: 그리드
+layout.table:
+  en: Table
+  zh-CN: 表格
+  zh-TW: 表格
+  ja: テーブル
+  ko: 표
+action.add_files:
+  en: Add files
+  zh-CN: 添加文件
+  zh-TW: 新增檔案
+  ja: ファイルを追加
+  ko: 파일 추가
+action.add_to_library:
+  en: Add to library
+  zh-CN: 加入资产库
+  zh-TW: 加入資產庫
+  ja: ライブラリに追加
+  ko: 라이브러리에 추가
+action.open:
+  en: Open
+  zh-CN: 打开
+  zh-TW: 開啟
+  ja: 開く
+  ko: 열기
+action.close:
+  en: Close
+  zh-CN: 关闭
+  zh-TW: 關閉
+  ja: 閉じる
+  ko: 닫기
+action.remove:
+  en: Remove
+  zh-CN: 移除
+  zh-TW: 移除
+  ja: 削除
+  ko: 제거
+status.count:
+  en: "%{shown} of %{total} items"
+  zh-CN: 共 %{total} 项，显示 %{shown} 项
+  zh-TW: 共 %{total} 項，顯示 %{shown} 項
+  ja: "%{total} 件中 %{shown} 件"
+  ko: 전체 %{total}개 중 %{shown}개
+status.adding:
+  en: Adding…
+  zh-CN: 正在添加…
+  zh-TW: 正在新增…
+  ja: 追加中…
+  ko: 추가 중…
+status.failures:
+  en: "%{count} files could not be added"
+  zh-CN: "%{count} 个文件无法添加"
+  zh-TW: "%{count} 個檔案無法新增"
+  ja: "%{count} 件のファイルを追加できませんでした"
+  ko: 파일 %{count}개를 추가하지 못했습니다
+empty.no_library:
+  en: Snowcase could not open your library
+  zh-CN: Snowcase 无法打开你的资产库
+  zh-TW: Snowcase 無法開啟你的資產庫
+  ja: Snowcase でライブラリを開けませんでした
+  ko: Snowcase에서 라이브러리를 열 수 없습니다
+empty.library:
+  en: Drop files or folders here, or click Add files
+  zh-CN: 将文件或文件夹拖到这里，或点击“添加文件”
+  zh-TW: 將檔案或資料夾拖曳到這裡，或點選「新增檔案」
+  ja: ファイルやフォルダーをここにドロップするか、「ファイルを追加」をクリックしてください
+  ko: 파일이나 폴더를 여기에 끌어다 놓거나 '파일 추가'를 클릭하세요
+empty.no_results:
+  en: Nothing matches this filter
+  zh-CN: 没有符合筛选条件的项目
+  zh-TW: 沒有符合篩選條件的項目
+  ja: 条件に一致する項目はありません
+  ko: 조건에 맞는 항목이 없습니다
+item.inbox:
+  en: Inbox
+  zh-CN: 待整理
+  zh-TW: 待整理
+  ja: 未整理
+  ko: 정리 대기
+item.in_library:
+  en: In library
+  zh-CN: 已入库
+  zh-TW: 已入庫
+  ja: 登録済み
+  ko: 등록됨
+item.tags:
+  en: Tags
+  zh-CN: 标签
+  zh-TW: 標籤
+  ja: タグ
+  ko: 태그
+item.folders:
+  en: Folders
+  zh-CN: 文件夹
+  zh-TW: 資料夾
+  ja: フォルダー
+  ko: 폴더
+item.files:
+  en: Files
+  zh-CN: 文件
+  zh-TW: 檔案
+  ja: ファイル
+  ko: 파일
+item.overview:
+  en: Overview
+  zh-CN: 概览
+  zh-TW: 概覽
+  ja: 概要
+  ko: 개요
+item.status:
+  en: Status
+  zh-CN: 状态
+  zh-TW: 狀態
+  ja: 状態
+  ko: 상태
+item.name:
+  en: Name
+  zh-CN: 名称
+  zh-TW: 名稱
+  ja: 名前
+  ko: 이름
+item.size:
+  en: Size
+  zh-CN: 大小
+  zh-TW: 大小
+  ja: サイズ
+  ko: 크기
+file.missing:
+  en: Missing
+  zh-CN: 缺失
+  zh-TW: 遺失
+  ja: 見つかりません
+  ko: 누락됨
+error.io:
+  en: "Could not prepare the library folder: %{detail}"
+  zh-CN: 无法准备资产库目录：%{detail}
+  zh-TW: 無法準備資產庫目錄：%{detail}
+  ja: "ライブラリのフォルダーを準備できませんでした: %{detail}"
+  ko: "라이브러리 폴더를 준비하지 못했습니다: %{detail}"
+error.open:
+  en: "Could not open the library database: %{detail}"
+  zh-CN: 无法打开资产库数据库：%{detail}
+  zh-TW: 無法開啟資產庫資料庫：%{detail}
+  ja: "ライブラリのデータベースを開けませんでした: %{detail}"
+  ko: "라이브러리 데이터베이스를 열지 못했습니다: %{detail}"
+error.query:
+  en: "Library database error: %{detail}"
+  zh-CN: 资产库数据库出错：%{detail}
+  zh-TW: 資產庫資料庫發生錯誤：%{detail}
+  ja: "ライブラリのデータベースでエラーが発生しました: %{detail}"
+  ko: "라이브러리 데이터베이스 오류: %{detail}"
+error.migration:
+  en: "Could not upgrade the library database: %{detail}"
+  zh-CN: 无法升级资产库数据库：%{detail}
+  zh-TW: 無法升級資產庫資料庫：%{detail}
+  ja: "ライブラリのデータベースを更新できませんでした: %{detail}"
+  ko: "라이브러리 데이터베이스를 업그레이드하지 못했습니다: %{detail}"
+error.newer_library:
+  en: This library was created by a newer version of Snowcase. Update Snowcase to open it.
+  zh-CN: 这个资产库由更新版本的 Snowcase 创建，请更新 Snowcase 后再打开。
+  zh-TW: 這個資產庫由較新版本的 Snowcase 建立，請更新 Snowcase 後再開啟。
+  ja: このライブラリは新しいバージョンの Snowcase で作成されています。Snowcase を更新してから開いてください。
+  ko: 이 라이브러리는 최신 버전의 Snowcase에서 만들어졌습니다. Snowcase를 업데이트한 후 여세요.
+error.non_utf8_path:
+  en: "The library path contains unsupported characters: %{path}"
+  zh-CN: 资产库路径包含不支持的字符：%{path}
+  zh-TW: 資產庫路徑包含不支援的字元：%{path}
+  ja: "ライブラリのパスに使用できない文字が含まれています: %{path}"
+  ko: "라이브러리 경로에 지원되지 않는 문자가 있습니다: %{path}"

@@ -15,6 +15,7 @@ use snowcase_core::library::{Library, Scope, SortKey, collect_files, inspect_fil
 use snowcase_core::{FileKind, ItemChanges, ItemId, ItemStatus, LocationState, StoreError};
 
 use self::item_table::{ItemRow, ItemTable};
+use crate::i18n::{self, Locale, tr};
 use crate::library_store::LibraryStore;
 
 const CARD_WIDTH: f32 = 168.;
@@ -34,8 +35,16 @@ enum DetailTab {
     Files,
 }
 
-const DETAIL_TABS: [(DetailTab, &str); 2] =
-    [(DetailTab::Overview, "Overview"), (DetailTab::Files, "Files")];
+const DETAIL_TABS: [DetailTab; 2] = [DetailTab::Overview, DetailTab::Files];
+
+impl DetailTab {
+    fn label(self, cx: &App) -> SharedString {
+        match self {
+            Self::Overview => tr!(cx, "item.overview"),
+            Self::Files => tr!(cx, "item.files"),
+        }
+    }
+}
 
 pub struct LibraryView {
     store: Entity<LibraryStore>,
@@ -57,15 +66,16 @@ pub struct LibraryView {
 
 impl LibraryView {
     pub fn new(store: Entity<LibraryStore>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let input = |placeholder: &'static str, window: &mut Window, cx: &mut Context<Self>| {
-            cx.new(|cx| InputState::new(window, cx).placeholder(placeholder))
-        };
-        let search = input("Search titles, tags and files", window, cx);
-        let tag_input = input("Add a tag", window, cx);
-        let folder_input = input("Add to a folder", window, cx);
+        let search = cx.new(|cx| InputState::new(window, cx));
+        let tag_input = cx.new(|cx| InputState::new(window, cx));
+        let folder_input = cx.new(|cx| InputState::new(window, cx));
         let table = cx.new(|cx| TableState::new(ItemTable::default(), window, cx));
         let subscriptions = vec![
             cx.observe(&store, |this, _, cx| this.refresh(cx)),
+            cx.observe_global_in::<Locale>(window, |this, window, cx| {
+                this.apply_locale(window, cx);
+                this.refresh(cx);
+            }),
             cx.subscribe_in(&search, window, |this, _, event, _, cx| {
                 if matches!(event, InputEvent::Change) {
                     this.refresh(cx);
@@ -128,8 +138,20 @@ impl LibraryView {
             last_failures: 0,
             _subscriptions: subscriptions,
         };
+        view.apply_locale(window, cx);
         view.refresh(cx);
         view
+    }
+
+    fn apply_locale(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        for (input, key) in [
+            (&self.search, "search.placeholder"),
+            (&self.tag_input, "tag.placeholder"),
+            (&self.folder_input, "folder.placeholder"),
+        ] {
+            let placeholder = tr!(cx, key);
+            input.update(cx, |input, cx| input.set_placeholder(placeholder, window, cx));
+        }
     }
 
     fn current_item(&self) -> Option<ItemId> {
@@ -160,7 +182,7 @@ impl LibraryView {
         let rows: Vec<ItemRow> = self
             .rows
             .iter()
-            .filter_map(|id| ItemRow::new(library, *id))
+            .filter_map(|id| ItemRow::new(library, *id, cx))
             .collect();
         self.table.update(cx, |table, cx| {
             table.delegate_mut().rows = rows;
@@ -226,6 +248,7 @@ impl LibraryView {
     }
 
     fn add_folder(&mut self, cx: &mut Context<Self>) {
+        let locale = i18n::locale(cx);
         self.change(cx, |library| {
             let taken: Vec<String> = library
                 .folder_tree()
@@ -233,7 +256,7 @@ impl LibraryView {
                 .map(|row| row.folder.name.to_lowercase())
                 .collect();
             let name = (1..)
-                .map(|n| format!("New folder {n}"))
+                .map(|n| rust_i18n::t!("folder.new_name", locale = locale, n = n).into_owned())
                 .find(|name| !taken.contains(&name.to_lowercase()))
                 .unwrap_or_default();
             library.create_folder(None, &name)
@@ -250,14 +273,14 @@ impl LibraryView {
             .p_3()
             .bg(theme.sidebar);
 
-        let mut group = filter_group("Library", None);
+        let mut group = filter_group(tr!(cx, "nav.library"), None);
         for (id, label, scope) in [
-            ("scope-all", "All items", Scope::All),
-            ("scope-inbox", "Inbox", Scope::Inbox),
-            ("scope-in-library", "In library", Scope::InLibrary),
+            ("scope-all", tr!(cx, "scope.all"), Scope::All),
+            ("scope-inbox", tr!(cx, "item.inbox"), Scope::Inbox),
+            ("scope-in-library", tr!(cx, "item.in_library"), Scope::InLibrary),
         ] {
             let count = library.count(&scope);
-            group = group.child(self.filter_item(id.into(), label.into(), 0, count, scope, cx));
+            group = group.child(self.filter_item(id.into(), label, 0, count, scope, cx));
         }
         column = column.child(group);
 
@@ -265,9 +288,9 @@ impl LibraryView {
             .ghost()
             .compact()
             .icon(IconName::Plus)
-            .tooltip("New folder")
+            .tooltip(tr!(cx, "folder.new"))
             .on_click(cx.listener(|this, _, _, cx| this.add_folder(cx)));
-        let mut group = filter_group("Folders", Some(add));
+        let mut group = filter_group(tr!(cx, "item.folders"), Some(add));
         for row in library.folder_tree() {
             group = group.child(self.filter_item(
                 format!("scope-folder-{}", row.folder.id.0).into(),
@@ -284,7 +307,7 @@ impl LibraryView {
         if tags.is_empty() {
             return column;
         }
-        let mut group = filter_group("Tags", None);
+        let mut group = filter_group(tr!(cx, "item.tags"), None);
         for (tag, count) in tags {
             group = group.child(self.filter_item(
                 format!("scope-tag-{}", tag.id.0).into(),
@@ -355,13 +378,13 @@ impl LibraryView {
                     .compact()
                     .children([
                         Button::new("sort-added")
-                            .label("Newest")
+                            .label(tr!(cx, "sort.newest"))
                             .selected(sort == SortKey::Added),
                         Button::new("sort-name")
-                            .label("Name")
+                            .label(tr!(cx, "item.name"))
                             .selected(sort == SortKey::Name),
                         Button::new("sort-size")
-                            .label("Size")
+                            .label(tr!(cx, "item.size"))
                             .selected(sort == SortKey::Size),
                     ])
                     .on_click(cx.listener(|this, selected: &Vec<usize>, _, cx| {
@@ -379,10 +402,10 @@ impl LibraryView {
                     .compact()
                     .children([
                         Button::new("layout-grid")
-                            .label("Grid")
+                            .label(tr!(cx, "layout.grid"))
                             .selected(layout == Layout::Grid),
                         Button::new("layout-table")
-                            .label("Table")
+                            .label(tr!(cx, "layout.table"))
                             .selected(layout == Layout::Table),
                     ])
                     .on_click(cx.listener(|this, selected: &Vec<usize>, _, cx| {
@@ -398,7 +421,7 @@ impl LibraryView {
                 Button::new("add-files")
                     .primary()
                     .icon(IconName::Plus)
-                    .label("Add files")
+                    .label(tr!(cx, "action.add_files"))
                     .on_click(cx.listener(|this, _, _, cx| this.pick_files(cx))),
             )
     }
@@ -406,11 +429,13 @@ impl LibraryView {
     fn render_status(&self, store: &LibraryStore, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
         let total = store.library().map_or(0, |library| library.items().len());
-        let mut status = format!("{} of {total} items", self.rows.len());
+        let mut status = tr!(cx, "status.count", shown = self.rows.len(), total = total).to_string();
         if self.pending_imports > 0 {
-            status.push_str(" · adding…");
+            status.push_str(" · ");
+            status.push_str(&tr!(cx, "status.adding"));
         } else if self.last_failures > 0 {
-            status.push_str(&format!(" · {} files could not be added", self.last_failures));
+            status.push_str(" · ");
+            status.push_str(&tr!(cx, "status.failures", count = self.last_failures));
         }
         h_flex()
             .gap_3()
@@ -424,7 +449,12 @@ impl LibraryView {
             .children(
                 store
                     .error()
-                    .map(|error| div().text_color(theme.danger).truncate().child(error.to_owned())),
+                    .map(|error| {
+                        div()
+                            .text_color(theme.danger)
+                            .truncate()
+                            .child(i18n::error_message(error, cx))
+                    }),
             )
     }
 
@@ -511,7 +541,7 @@ impl LibraryView {
                     .text_color(theme.muted_foreground)
                     .child(format_size(facts.size))
                     .when(item.status == ItemStatus::Inbox, |this| {
-                        this.child(badge("Inbox", theme))
+                        this.child(badge(tr!(cx, "item.inbox"), theme))
                     }),
             )
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
@@ -527,14 +557,12 @@ impl LibraryView {
     fn render_main(&self, store: &LibraryStore, cx: &Context<Self>) -> Div {
         let muted = cx.theme().muted_foreground;
         let body = match store.library() {
-            None => centered("library-error", "Snowcase could not open your library", muted),
-            Some(library) if library.items().is_empty() => centered(
-                "empty-state",
-                "Drop files or folders here, or click Add files",
-                muted,
-            ),
+            None => centered("library-error", tr!(cx, "empty.no_library"), muted),
+            Some(library) if library.items().is_empty() => {
+                centered("empty-state", tr!(cx, "empty.library"), muted)
+            }
             Some(_) if self.rows.is_empty() => {
-                centered("no-results", "Nothing matches this filter", muted)
+                centered("no-results", tr!(cx, "empty.no_results"), muted)
             }
             Some(_) => match self.layout {
                 Layout::Grid => self.render_grid(cx),
@@ -569,7 +597,7 @@ impl LibraryView {
                             .ghost()
                             .compact()
                             .icon(IconName::Maximize)
-                            .tooltip("Open")
+                            .tooltip(tr!(cx, "action.open"))
                             .on_click(cx.listener(move |this, _, _, cx| this.open_page(id, cx))),
                     )
                     .child(
@@ -577,7 +605,7 @@ impl LibraryView {
                             .ghost()
                             .compact()
                             .icon(IconName::Close)
-                            .tooltip("Close")
+                            .tooltip(tr!(cx, "action.close"))
                             .on_click(cx.listener(|this, _, _, cx| {
                                 this.selected = None;
                                 cx.notify();
@@ -607,11 +635,11 @@ impl LibraryView {
         let facts = library.facts(id).cloned().unwrap_or_default();
 
         let status = if item.status == ItemStatus::Inbox {
-            h_flex().gap_2().items_center().child(badge("Inbox", theme)).child(
+            h_flex().gap_2().items_center().child(badge(tr!(cx, "item.inbox"), theme)).child(
                 Button::new("add-to-library")
                     .primary()
                     .compact()
-                    .label("Add to library")
+                    .label(tr!(cx, "action.add_to_library"))
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.change(cx, |library| {
                             library.update_item(
@@ -625,13 +653,13 @@ impl LibraryView {
                     })),
             )
         } else {
-            h_flex().child(badge("In library", theme))
+            h_flex().child(badge(tr!(cx, "item.in_library"), theme))
         };
 
         let tags = h_flex().flex_wrap().gap_1().children(library.tags_of(id).into_iter().map(
             |tag| {
                 let tag_id = tag.id;
-                removable(format!("remove-tag-{}", tag_id.0), format!("# {}", tag.name))
+                removable(format!("remove-tag-{}", tag_id.0), format!("# {}", tag.name), cx)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.change(cx, |library| library.untag_item(id, tag_id));
                     }))
@@ -641,7 +669,7 @@ impl LibraryView {
         let folders = h_flex().flex_wrap().gap_1().children(
             library.folders_of(id).into_iter().map(|folder| {
                 let folder_id = folder.id;
-                removable(format!("remove-folder-{}", folder_id.0), folder.name.clone())
+                removable(format!("remove-folder-{}", folder_id.0), folder.name.clone(), cx)
                     .on_click(cx.listener(move |this, _, _, cx| {
                         this.change(cx, |library| library.remove_from_folder(id, folder_id));
                     }))
@@ -653,12 +681,12 @@ impl LibraryView {
             .child(thumbnail(facts.kinds.first().copied(), px(160.), theme))
             .child(status)
             .child(
-                section("Tags")
+                section(tr!(cx, "item.tags"))
                     .child(tags)
                     .child(Input::new(&self.tag_input).id("tag-input").small()),
             )
             .child(
-                section("Folders")
+                section(tr!(cx, "item.folders"))
                     .child(folders)
                     .child(Input::new(&self.folder_input).id("folder-input").small()),
             )
@@ -675,7 +703,7 @@ impl LibraryView {
         let item = library.item(id)?;
         let selected = DETAIL_TABS
             .iter()
-            .position(|(candidate, _)| *candidate == tab)
+            .position(|candidate| *candidate == tab)
             .unwrap_or(0);
         let body = match tab {
             DetailTab::Overview => self.render_overview(id, library, cx),
@@ -699,7 +727,7 @@ impl LibraryView {
                                 .ghost()
                                 .compact()
                                 .icon(IconName::ChevronLeft)
-                                .label("Library")
+                                .label(tr!(cx, "nav.library"))
                                 .on_click(cx.listener(|this, _, _, cx| {
                                     this.page = None;
                                     cx.notify();
@@ -712,9 +740,9 @@ impl LibraryView {
                         .underline()
                         .px_4()
                         .selected_index(selected)
-                        .children(DETAIL_TABS.iter().map(|(_, label)| Tab::new().label(*label)))
+                        .children(DETAIL_TABS.iter().map(|tab| Tab::new().label(tab.label(cx))))
                         .on_click(cx.listener(|this, ix: &usize, _, cx| {
-                            if let (Some((id, _)), Some((tab, _))) =
+                            if let (Some((id, _)), Some(tab)) =
                                 (this.page, DETAIL_TABS.get(*ix))
                             {
                                 this.page = Some((id, *tab));
@@ -783,7 +811,7 @@ impl Render for LibraryView {
 
 fn render_files(id: ItemId, library: &Library, cx: &App) -> Div {
     let theme = cx.theme();
-    let mut list = section("Files");
+    let mut list = section(tr!(cx, "item.files"));
     for file in library.versions(id).into_iter().flat_map(|version| version.files) {
         let missing = file
             .locations
@@ -795,7 +823,7 @@ fn render_files(id: ItemId, library: &Library, cx: &App) -> Div {
                 .items_center()
                 .text_sm()
                 .child(div().flex_1().min_w_0().truncate().child(file.file.file_name.clone()))
-                .when(missing, |this| this.child(badge("Missing", theme)))
+                .when(missing, |this| this.child(badge(tr!(cx, "file.missing"), theme)))
                 .child(
                     div()
                         .text_xs()
@@ -807,7 +835,7 @@ fn render_files(id: ItemId, library: &Library, cx: &App) -> Div {
     list
 }
 
-fn filter_group(label: &'static str, action: Option<Button>) -> Div {
+fn filter_group(label: SharedString, action: Option<Button>) -> Div {
     v_flex().gap_0p5().child(
         h_flex()
             .justify_between()
@@ -819,18 +847,18 @@ fn filter_group(label: &'static str, action: Option<Button>) -> Div {
     )
 }
 
-fn section(label: &'static str) -> Div {
+fn section(label: SharedString) -> Div {
     v_flex()
         .gap_2()
         .child(div().text_xs().font_semibold().opacity(0.6).child(label))
 }
 
-fn removable(id: String, label: impl Into<SharedString>) -> Button {
+fn removable(id: String, label: impl Into<SharedString>, cx: &App) -> Button {
     Button::new(SharedString::from(id))
         .outline()
         .compact()
         .label(format!("{}  ×", label.into()))
-        .tooltip("Remove")
+        .tooltip(tr!(cx, "action.remove"))
 }
 
 fn badge(text: impl Into<SharedString>, theme: &Theme) -> Div {
@@ -843,7 +871,7 @@ fn badge(text: impl Into<SharedString>, theme: &Theme) -> Div {
         .child(text.into())
 }
 
-fn centered(id: &'static str, text: &'static str, color: Hsla) -> AnyElement {
+fn centered(id: &'static str, text: SharedString, color: Hsla) -> AnyElement {
     div()
         .id(id)
         .test_support()

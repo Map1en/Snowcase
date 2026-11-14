@@ -4,6 +4,7 @@ use snowcase_core::library::Library;
 use snowcase_core::{ItemId, ItemStatus};
 
 use super::format_size;
+use crate::i18n::tr;
 
 pub struct ItemRow {
     pub id: ItemId,
@@ -11,12 +12,12 @@ pub struct ItemRow {
 }
 
 impl ItemRow {
-    pub fn new(library: &Library, id: ItemId) -> Option<Self> {
+    pub fn new(library: &Library, id: ItemId, cx: &App) -> Option<Self> {
         let item = library.item(id)?;
         let facts = library.facts(id).cloned().unwrap_or_default();
         let status = match item.status {
-            ItemStatus::Inbox => "Inbox",
-            ItemStatus::Confirmed => "In library",
+            ItemStatus::Inbox => tr!(cx, "item.inbox"),
+            ItemStatus::Confirmed => tr!(cx, "item.in_library"),
         };
         let tags = library
             .tags_of(id)
@@ -28,12 +29,17 @@ impl ItemRow {
             id,
             cells: [
                 item.title.clone().into(),
-                status.into(),
+                status,
                 tags.into(),
                 facts.file_count.to_string().into(),
                 format_size(facts.size).into(),
             ],
         })
+    }
+
+    #[cfg(test)]
+    pub fn status(&self) -> &SharedString {
+        &self.cells[1]
     }
 }
 
@@ -51,13 +57,13 @@ impl TableDelegate for ItemTable {
         self.rows.len()
     }
 
-    fn column(&self, ix: usize, _: &App) -> Column {
+    fn column(&self, ix: usize, cx: &App) -> Column {
         match ix {
-            0 => Column::new("name", "Name").width(px(280.)),
-            1 => Column::new("status", "Status").width(px(100.)),
-            2 => Column::new("tags", "Tags").width(px(180.)),
-            3 => Column::new("files", "Files").width(px(60.)).text_right(),
-            _ => Column::new("size", "Size").width(px(90.)).text_right(),
+            0 => Column::new("name", tr!(cx, "item.name")).width(px(280.)),
+            1 => Column::new("status", tr!(cx, "item.status")).width(px(100.)),
+            2 => Column::new("tags", tr!(cx, "item.tags")).width(px(180.)),
+            3 => Column::new("files", tr!(cx, "item.files")).width(px(60.)).text_right(),
+            _ => Column::new("size", tr!(cx, "item.size")).width(px(90.)).text_right(),
         }
     }
 
