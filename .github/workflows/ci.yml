@@ -46,4 +46,4 @@ jobs:
               working-directory: crates/store
               run: |
                   diesel migration run --database-url "$RUNNER_TEMP/schema.db"
-                  diesel print-schema --database-url "$RUNNER_TEMP/schema.db" | diff - src/schema.rs
+                  diesel print-schema --database-url "$RUNNER_TEMP/schema.db" | diff --strip-trailing-cr - src/schema.rs
