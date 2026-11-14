@@ -2,6 +2,13 @@
 
 Thanks for your interest in Snowcase. It is in early development, so please read this before opening a pull request.
 
+> [!IMPORTANT]
+> Snowcase is still in early development and changes quickly, so **please think carefully before opening a pull request that changes source code**. Consider waiting until the first release, or until this notice is removed. Issues with bug reports, ideas, and feedback are very welcome.
+
+## Development
+
+Install [bacon](https://dystroy.org/bacon/) once with `cargo install --locked bacon`, then run `bacon` in the repository root. It launches the app and rebuilds and restarts it whenever a source file changes.
+
 ## Before you open a PR
 
 - **Open an [issue](https://github.com/Map1en/Snowcase/issues) first** for anything beyond a small fix. Describe the problem, your approach, and the trade-offs, and get agreement before writing code. The architecture is still moving, and unsolicited large PRs will likely be declined.
