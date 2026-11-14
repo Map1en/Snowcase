@@ -100,17 +100,6 @@ text_enum!(ItemStatus {
     Confirmed => "confirmed",
 });
 
-text_enum!(Category {
-    Avatar => "avatar",
-    Outfit => "outfit",
-    Accessory => "accessory",
-    Hair => "hair",
-    Shader => "shader",
-    Tool => "tool",
-    Texture => "texture",
-    Other => "other",
-});
-
 text_enum!(StoreKind {
     Booth => "booth",
     Other => "other",
@@ -175,7 +164,6 @@ impl From<BlobKind> for FileKind {
 pub struct Item {
     pub id: ItemId,
     pub title: String,
-    pub category: Category,
     pub status: ItemStatus,
     pub note: String,
     pub cover_media: Option<String>,
@@ -187,7 +175,6 @@ pub struct Item {
 #[diesel(table_name = item)]
 pub struct ItemChanges {
     pub title: Option<String>,
-    pub category: Option<Category>,
     pub status: Option<ItemStatus>,
     pub note: Option<String>,
 }
@@ -196,17 +183,6 @@ pub struct ItemChanges {
 #[diesel(table_name = item_source, check_for_backend(Sqlite))]
 pub struct ItemSource {
     pub id: SourceId,
-    pub item_id: ItemId,
-    pub store: StoreKind,
-    pub url: Option<String>,
-    pub external_id: Option<String>,
-    pub author: Option<String>,
-    pub account: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Insertable)]
-#[diesel(table_name = item_source)]
-pub struct NewSource {
     pub item_id: ItemId,
     pub store: StoreKind,
     pub url: Option<String>,
@@ -269,7 +245,7 @@ pub struct FileImport {
     pub role: Option<FileRole>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable)]
 #[diesel(table_name = media, check_for_backend(Sqlite))]
 pub struct Media {
     pub hash: String,
@@ -279,7 +255,7 @@ pub struct Media {
     pub bytes: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable)]
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable)]
 #[diesel(table_name = item_image, check_for_backend(Sqlite))]
 pub struct ItemImage {
     pub item_id: ItemId,

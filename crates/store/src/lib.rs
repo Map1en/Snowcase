@@ -99,7 +99,7 @@ impl Store {
         Ok(())
     }
 
-    pub fn backup(&mut self) -> Result<PathBuf> {
+    fn backup(&mut self) -> Result<PathBuf> {
         let dir = self.dir.join(BACKUPS);
         fs::create_dir_all(&dir)?;
         let mut stamp = now_ms();
@@ -162,17 +162,11 @@ impl Store {
         })
     }
 
-    pub fn create_item(
-        &mut self,
-        title: &str,
-        category: Category,
-        status: ItemStatus,
-    ) -> Result<ItemId> {
+    pub fn create_item(&mut self, title: &str, status: ItemStatus) -> Result<ItemId> {
         let now = now_ms();
         Ok(diesel::insert_into(item::table)
             .values((
                 item::title.eq(title),
-                item::category.eq(category),
                 item::status.eq(status),
                 item::created_at.eq(now),
                 item::updated_at.eq(now),
@@ -186,18 +180,6 @@ impl Store {
             .set((changes, item::updated_at.eq(now_ms())))
             .execute(&mut self.conn)?;
         Ok(())
-    }
-
-    pub fn delete_item(&mut self, id: ItemId) -> Result<()> {
-        diesel::delete(item::table.find(id)).execute(&mut self.conn)?;
-        Ok(())
-    }
-
-    pub fn add_source(&mut self, source: &NewSource) -> Result<SourceId> {
-        Ok(diesel::insert_into(item_source::table)
-            .values(source)
-            .returning(item_source::id)
-            .get_result(&mut self.conn)?)
     }
 
     pub fn add_version(
@@ -274,52 +256,6 @@ impl Store {
         })
     }
 
-    pub fn set_blob_hash(&mut self, id: BlobId, hash: &str) -> Result<BlobId> {
-        self.conn.immediate_transaction(|conn| {
-            let duplicate: Option<BlobId> = blob::table
-                .filter(blob::hash.eq(hash))
-                .filter(blob::id.ne(id))
-                .select(blob::id)
-                .first(conn)
-                .optional()?;
-            let Some(keep) = duplicate else {
-                diesel::update(blob::table.find(id))
-                    .set(blob::hash.eq(hash))
-                    .execute(conn)?;
-                return Ok(id);
-            };
-            let files: Vec<VersionFile> = version_file::table
-                .filter(version_file::blob_id.eq(id))
-                .select(VersionFile::as_select())
-                .load(conn)?;
-            for file in files {
-                diesel::insert_or_ignore_into(version_file::table)
-                    .values(VersionFile {
-                        blob_id: keep,
-                        ..file
-                    })
-                    .execute(conn)?;
-            }
-            diesel::delete(version_file::table.filter(version_file::blob_id.eq(id)))
-                .execute(conn)?;
-            diesel::update(blob_location::table.filter(blob_location::blob_id.eq(id)))
-                .set(blob_location::blob_id.eq(keep))
-                .execute(conn)?;
-            diesel::delete(blob::table.find(id)).execute(conn)?;
-            Ok(keep)
-        })
-    }
-
-    pub fn set_location_state(&mut self, path: &str, state: LocationState) -> Result<bool> {
-        let changed = diesel::update(blob_location::table.filter(blob_location::path.eq(path)))
-            .set((
-                blob_location::state.eq(state),
-                blob_location::last_seen.eq(now_ms()),
-            ))
-            .execute(&mut self.conn)?;
-        Ok(changed > 0)
-    }
-
     pub fn tag_item(&mut self, item_id: ItemId, name: &str) -> Result<TagId> {
         self.conn.immediate_transaction(|conn| {
             diesel::insert_or_ignore_into(tag::table)
@@ -370,42 +306,6 @@ impl Store {
         Ok(())
     }
 
-    pub fn add_media(&mut self, media: &Media) -> Result<()> {
-        diesel::insert_or_ignore_into(media::table)
-            .values(media)
-            .execute(&mut self.conn)?;
-        Ok(())
-    }
-
-    pub fn add_item_image(
-        &mut self,
-        item_id: ItemId,
-        media_hash: &str,
-        origin: ImageOrigin,
-    ) -> Result<()> {
-        self.conn.immediate_transaction(|conn| {
-            let last: Option<i32> = item_image::table
-                .filter(item_image::item_id.eq(item_id))
-                .select(max(item_image::position))
-                .first(conn)?;
-            diesel::insert_or_ignore_into(item_image::table)
-                .values(ItemImage {
-                    item_id,
-                    media_hash: media_hash.to_owned(),
-                    position: last.map_or(0, |last| last + 1),
-                    origin,
-                })
-                .execute(conn)?;
-            Ok(())
-        })
-    }
-
-    pub fn set_cover(&mut self, item_id: ItemId, media_hash: Option<&str>) -> Result<()> {
-        diesel::update(item::table.find(item_id))
-            .set((item::cover_media.eq(media_hash), item::updated_at.eq(now_ms())))
-            .execute(&mut self.conn)?;
-        Ok(())
-    }
 }
 
 fn insert_blob(conn: &mut SqliteConnection, file: &FileImport) -> QueryResult<BlobId> {

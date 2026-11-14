@@ -9,7 +9,6 @@ CREATE TABLE media (
 CREATE TABLE item (
     id INTEGER PRIMARY KEY NOT NULL,
     title TEXT NOT NULL,
-    category TEXT NOT NULL,
     status TEXT NOT NULL,
     note TEXT NOT NULL DEFAULT '',
     cover_media TEXT REFERENCES media(hash),

@@ -33,7 +33,6 @@ diesel::table! {
     item (id) {
         id -> BigInt,
         title -> Text,
-        category -> Text,
         status -> Text,
         note -> Text,
         cover_media -> Nullable<Text>,

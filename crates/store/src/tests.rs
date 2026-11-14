@@ -20,23 +20,13 @@ fn import(version_id: VersionId, path: &str, fingerprint: &str) -> FileImport {
     }
 }
 
-fn media(hash: &str) -> Media {
-    Media {
-        hash: hash.to_owned(),
-        mime: "image/webp".to_owned(),
-        width: Some(1600),
-        height: Some(900),
-        bytes: 1234,
-    }
-}
-
 #[test]
 fn open_creates_the_schema_and_reopening_keeps_the_data() {
     let dir = tempfile::tempdir().unwrap();
     let id = {
         let mut store = Store::open(dir.path()).unwrap();
         store
-            .create_item("Gloves", Category::Accessory, ItemStatus::Inbox)
+            .create_item("Gloves", ItemStatus::Inbox)
             .unwrap()
     };
 
@@ -46,7 +36,7 @@ fn open_creates_the_schema_and_reopening_keeps_the_data() {
     assert_eq!(catalog.items.len(), 1);
     let item = &catalog.items[0];
     assert_eq!((item.id, item.title.as_str()), (id, "Gloves"));
-    assert_eq!((item.category, item.status), (Category::Accessory, ItemStatus::Inbox));
+    assert_eq!(item.status, ItemStatus::Inbox);
     assert_eq!(item.note, "");
     assert!(!dir.path().join(BACKUPS).exists());
 }
@@ -73,7 +63,7 @@ fn open_refuses_a_library_written_by_a_newer_version() {
 fn backup_writes_a_database_that_opens_with_the_same_data() {
     let (_dir, mut store) = open();
     store
-        .create_item("Earrings", Category::Accessory, ItemStatus::Confirmed)
+        .create_item("Earrings", ItemStatus::Confirmed)
         .unwrap();
 
     let backup = store.backup().unwrap();
@@ -90,7 +80,7 @@ fn backup_writes_a_database_that_opens_with_the_same_data() {
 fn update_item_applies_only_the_given_fields() {
     let (_dir, mut store) = open();
     let id = store
-        .create_item("gloves", Category::Other, ItemStatus::Inbox)
+        .create_item("gloves", ItemStatus::Inbox)
         .unwrap();
 
     store
@@ -107,7 +97,6 @@ fn update_item_applies_only_the_given_fields() {
     let item = store.load().unwrap().items.remove(0);
     assert_eq!(item.title, "Gloves");
     assert_eq!(item.status, ItemStatus::Confirmed);
-    assert_eq!(item.category, Category::Other);
     assert!(item.updated_at >= item.created_at);
 }
 
@@ -115,7 +104,7 @@ fn update_item_applies_only_the_given_fields() {
 fn add_file_reuses_the_blob_for_a_known_path_and_shares_it_across_versions() {
     let (_dir, mut store) = open();
     let item = store
-        .create_item("Gloves", Category::Accessory, ItemStatus::Inbox)
+        .create_item("Gloves", ItemStatus::Inbox)
         .unwrap();
     let v1 = store.add_version(item, Some("1.0"), None).unwrap();
     let v2 = store.add_version(item, Some("1.1"), None).unwrap();
@@ -136,7 +125,7 @@ fn add_file_reuses_the_blob_for_a_known_path_and_shares_it_across_versions() {
 fn add_file_creates_a_new_blob_when_the_file_at_a_path_changed() {
     let (_dir, mut store) = open();
     let item = store
-        .create_item("Gloves", Category::Accessory, ItemStatus::Inbox)
+        .create_item("Gloves", ItemStatus::Inbox)
         .unwrap();
     let v1 = store.add_version(item, Some("1.0"), None).unwrap();
     let v2 = store.add_version(item, Some("1.1"), None).unwrap();
@@ -152,75 +141,10 @@ fn add_file_creates_a_new_blob_when_the_file_at_a_path_changed() {
 }
 
 #[test]
-fn set_blob_hash_merges_duplicates_into_the_existing_blob() {
-    let (_dir, mut store) = open();
-    let item = store
-        .create_item("Gloves", Category::Accessory, ItemStatus::Inbox)
-        .unwrap();
-    let v1 = store.add_version(item, Some("1.0"), None).unwrap();
-    let v2 = store.add_version(item, Some("1.1"), None).unwrap();
-    let a = store.add_file(&import(v1, "D:/A/Gloves.unitypackage", "10:1")).unwrap();
-    let b = store.add_file(&import(v1, "D:/B/Gloves.unitypackage", "10:2")).unwrap();
-    store.add_file(&import(v2, "D:/B/Gloves.unitypackage", "10:2")).unwrap();
-
-    assert_eq!(store.set_blob_hash(a, "same").unwrap(), a);
-    assert_eq!(store.set_blob_hash(b, "same").unwrap(), a);
-
-    let catalog = store.load().unwrap();
-    assert_eq!(catalog.blobs.len(), 1);
-    assert_eq!(catalog.blobs[0].hash.as_deref(), Some("same"));
-    assert!(catalog.locations.iter().all(|location| location.blob_id == a));
-    let files: Vec<_> = catalog
-        .version_files
-        .iter()
-        .map(|file| (file.version_id, file.blob_id))
-        .collect();
-    assert_eq!(files, [(v1, a), (v2, a)]);
-}
-
-#[test]
-fn deleting_an_item_cascades_but_keeps_blobs_and_media() {
-    let (_dir, mut store) = open();
-    let item = store
-        .create_item("Gloves", Category::Accessory, ItemStatus::Inbox)
-        .unwrap();
-    let version = store.add_version(item, None, None).unwrap();
-    store.add_file(&import(version, "D:/Gloves.unitypackage", "10:1")).unwrap();
-    store
-        .add_source(&NewSource {
-            item_id: item,
-            store: StoreKind::Booth,
-            url: Some("https://booth.pm/ja/items/123456".into()),
-            external_id: Some("123456".into()),
-            author: None,
-            account: None,
-        })
-        .unwrap();
-    store.add_media(&media("cover")).unwrap();
-    store.add_item_image(item, "cover", ImageOrigin::Store).unwrap();
-    store.tag_item(item, "gloves").unwrap();
-    let folder = store.create_folder(None, "Accessories").unwrap();
-    store.put_in_folder(item, folder).unwrap();
-
-    store.delete_item(item).unwrap();
-
-    let catalog = store.load().unwrap();
-    assert!(catalog.items.is_empty());
-    assert!(catalog.sources.is_empty());
-    assert!(catalog.versions.is_empty());
-    assert!(catalog.version_files.is_empty());
-    assert!(catalog.images.is_empty());
-    assert!(catalog.item_tags.is_empty());
-    assert!(catalog.item_folders.is_empty());
-    assert_eq!((catalog.blobs.len(), catalog.locations.len()), (1, 1));
-    assert_eq!((catalog.media.len(), catalog.tags.len(), catalog.folders.len()), (1, 1, 1));
-}
-
-#[test]
 fn a_blob_referenced_by_a_version_cannot_be_deleted() {
     let (_dir, mut store) = open();
     let item = store
-        .create_item("Gloves", Category::Accessory, ItemStatus::Inbox)
+        .create_item("Gloves", ItemStatus::Inbox)
         .unwrap();
     let version = store.add_version(item, None, None).unwrap();
     let blob_id = store.add_file(&import(version, "D:/Gloves.unitypackage", "10:1")).unwrap();
@@ -233,8 +157,8 @@ fn a_blob_referenced_by_a_version_cannot_be_deleted() {
 #[test]
 fn tags_are_unique_case_insensitively_and_shared_between_items() {
     let (_dir, mut store) = open();
-    let a = store.create_item("A", Category::Outfit, ItemStatus::Inbox).unwrap();
-    let b = store.create_item("B", Category::Outfit, ItemStatus::Inbox).unwrap();
+    let a = store.create_item("A", ItemStatus::Inbox).unwrap();
+    let b = store.create_item("B", ItemStatus::Inbox).unwrap();
 
     let first = store.tag_item(a, "Kikyo").unwrap();
     let second = store.tag_item(b, "kikyo").unwrap();
@@ -274,50 +198,10 @@ fn folders_are_positioned_per_parent() {
 }
 
 #[test]
-fn item_images_keep_their_order_and_the_cover_can_be_cleared() {
-    let (_dir, mut store) = open();
-    let item = store.create_item("Hair", Category::Hair, ItemStatus::Inbox).unwrap();
-    for hash in ["a", "b"] {
-        store.add_media(&media(hash)).unwrap();
-    }
-    store.add_media(&media("a")).unwrap();
-    store.add_item_image(item, "a", ImageOrigin::Store).unwrap();
-    store.add_item_image(item, "b", ImageOrigin::User).unwrap();
-    store.add_item_image(item, "a", ImageOrigin::User).unwrap();
-    store.set_cover(item, Some("b")).unwrap();
-    assert_eq!(store.load().unwrap().items[0].cover_media.as_deref(), Some("b"));
-
-    store.set_cover(item, None).unwrap();
-
-    let catalog = store.load().unwrap();
-    assert_eq!(catalog.items[0].cover_media, None);
-    assert_eq!(catalog.media.len(), 2);
-    let images: Vec<_> = catalog
-        .images
-        .iter()
-        .map(|image| (image.media_hash.as_str(), image.position, image.origin))
-        .collect();
-    assert_eq!(images, [("a", 0, ImageOrigin::Store), ("b", 1, ImageOrigin::User)]);
-}
-
-#[test]
-fn set_location_state_marks_missing_files() {
-    let (_dir, mut store) = open();
-    let item = store.create_item("Hair", Category::Hair, ItemStatus::Inbox).unwrap();
-    let version = store.add_version(item, None, None).unwrap();
-    store.add_file(&import(version, "D:/Hair.zip", "10:1")).unwrap();
-
-    assert!(store.set_location_state("D:/Hair.zip", LocationState::Missing).unwrap());
-    assert!(!store.set_location_state("D:/Other.zip", LocationState::Missing).unwrap());
-
-    assert_eq!(store.load().unwrap().locations[0].state, LocationState::Missing);
-}
-
-#[test]
 fn an_unknown_enum_value_fails_to_load_instead_of_defaulting() {
     let (_dir, mut store) = open();
-    store.create_item("Hair", Category::Hair, ItemStatus::Inbox).unwrap();
-    diesel::sql_query("UPDATE item SET category = 'spaceship'")
+    store.create_item("Hair", ItemStatus::Inbox).unwrap();
+    diesel::sql_query("UPDATE item SET status = 'spaceship'")
         .execute(&mut store.conn)
         .unwrap();
 
@@ -330,7 +214,7 @@ fn an_unknown_enum_value_fails_to_load_instead_of_defaulting() {
         cause = current.source();
     }
     assert!(
-        chain.iter().any(|message| message == "unknown Category value \"spaceship\""),
+        chain.iter().any(|message| message == "unknown ItemStatus value \"spaceship\""),
         "{chain:?}"
     );
 }
@@ -346,7 +230,6 @@ fn text_enums_round_trip_through_their_text() {
         }
     }
     check(ItemStatus::ALL, ItemStatus::as_str);
-    check(Category::ALL, Category::as_str);
     check(StoreKind::ALL, StoreKind::as_str);
     check(LocationState::ALL, LocationState::as_str);
     check(ImageOrigin::ALL, ImageOrigin::as_str);
