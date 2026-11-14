@@ -1,16 +1,25 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod library_store;
 mod library_view;
-mod settings_view;
 mod shell;
-mod tools_view;
 
 use gpui_kit::*;
+
+use snowcase_core::library::Library;
 
 use crate::shell::Shell;
 
 fn main() {
     let smoke = std::env::args().any(|arg| arg == "--smoke");
+    let library_dir = if smoke {
+        std::env::temp_dir().join("snowcase-smoke")
+    } else {
+        std::env::var_os("APPDATA")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("Snowcase")
+    };
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
@@ -38,7 +47,7 @@ fn main() {
                 if smoke {
                     window.on_next_frame(|_, cx| cx.quit());
                 }
-                cx.new(|cx| Shell::new(window, cx))
+                cx.new(|cx| Shell::new(Library::open(&library_dir), window, cx))
             })
             .expect("failed to open the main window");
         });

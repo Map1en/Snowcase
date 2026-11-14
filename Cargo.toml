@@ -12,9 +12,12 @@ repository = "https://github.com/Map1en/Snowcase"
 snowcase-formats = { path = "crates/formats" }
 snowcase-core = { path = "crates/core" }
 snowcase-store = { path = "crates/store" }
+snowcase-testing = { path = "crates/testing" }
 thiserror = "2"
 tempfile = "3"
 gpui-kit = "0.9"
 diesel = { version = "2.4", features = ["sqlite", "returning_clauses_for_sqlite_3_35"] }
 diesel_migrations = { version = "2.4", features = ["sqlite"] }
 libsqlite3-sys = { version = "0.40", features = ["bundled"] }
+fake = "5.1"
+rand = "0.10"

@@ -1,139 +1,154 @@
-use std::fs;
-use std::path::PathBuf;
+use gpui_kit::{AnyWindowHandle, AppContext, Entity, TestAppContext};
+use snowcase_core::library::{Library, Scope, SortKey};
+use snowcase_core::ItemStatus;
+use snowcase_testing::fixtures::{self, Fixture};
+use snowcase_testing::ui::{click, count, double_click, drop_paths, exists, open, press, type_into};
 
-use gpui_kit::test::TestWindowExt;
-use gpui_kit::{
-    AnyWindowHandle, AppContext, Bounds, Entity, ExternalPaths, FileDropEvent, Point,
-    TestAppContext, VisualTestContext, WindowBounds, WindowOptions, point, px, size,
-};
+use super::{Layout, LibraryView};
+use crate::library_store::LibraryStore;
 
-use super::LibraryView;
-
-fn open(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<LibraryView>) {
-    cx.update(gpui_kit::init);
-    cx.update(|cx| {
-        let (window, view) = gpui_kit::open_window(
-            WindowOptions {
-                window_bounds: Some(WindowBounds::Windowed(Bounds {
-                    origin: Point::default(),
-                    size: size(px(800.), px(600.)),
-                })),
-                ..Default::default()
-            },
-            cx,
-            |window, cx| cx.new(|cx| LibraryView::new(window, cx)),
-        )
-        .expect("open test window");
-        (window, view)
+fn open_library(
+    library: Library,
+    cx: &mut TestAppContext,
+) -> (AnyWindowHandle, Entity<LibraryView>) {
+    open(cx, |window, cx| {
+        let store = cx.new(|_| LibraryStore::new(Ok(library)));
+        cx.new(|cx| LibraryView::new(store, window, cx))
     })
-}
-
-fn drop_paths(window: AnyWindowHandle, paths: Vec<PathBuf>, cx: &mut TestAppContext) {
-    let position = point(px(400.), px(300.));
-    let mut vcx = VisualTestContext::from_window(window, cx);
-    vcx.simulate_event(FileDropEvent::Entered {
-        position,
-        paths: ExternalPaths(paths.into_iter().collect()),
-    });
-    vcx.simulate_event(FileDropEvent::Submit { position });
-}
-
-fn row_count(window: AnyWindowHandle, cx: &mut TestAppContext) -> usize {
-    cx.update_window(window, |_, window, cx| {
-        window.render_frame(cx);
-        (0usize..)
-            .take_while(|ix| window.try_find(("asset", *ix)).is_some())
-            .count()
-    })
-    .unwrap()
 }
 
 #[gpui_kit::test]
-fn add_files_button_adds_the_picked_files(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let outfit = dir.path().join("Outfit.unitypackage");
-    let cover = dir.path().join("cover.png");
-    fs::write(&outfit, [0x1f, 0x8b, 0x08]).unwrap();
-    fs::write(&cover, b"\x89PNG\r\n\x1a\n").unwrap();
-    let (window, view) = open(cx);
+fn a_new_library_is_empty_with_one_default_folder(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::empty();
+    let (window, _) = open_library(library, cx);
 
-    cx.update_window(window, |_, window, cx| {
-        window.render_frame(cx);
-        assert!(window.try_find("empty-state").is_some());
-        window.click("add-files", cx);
-    })
-    .unwrap();
+    assert!(exists(window, "empty-state", cx));
+    assert_eq!(count(window, "asset", cx), 0);
+    assert!(exists(window, "scope-folder-1", cx));
+    assert!(!exists(window, "scope-folder-2", cx));
+}
+
+#[gpui_kit::test]
+fn add_files_imports_the_picked_files(cx: &mut TestAppContext) {
+    let assets = fixtures::asset_dir();
+    let Fixture { library, dir: _dir } = fixtures::empty();
+    let (window, _) = open_library(library, cx);
+
+    click(window, "add-files", cx);
     cx.simulate_path_prompt_response(|options| {
-        assert!(options.files && options.multiple);
-        Some(vec![outfit.clone(), cover.clone()])
+        assert!(options.files && options.directories && options.multiple);
+        Some(vec![assets.path().join(fixtures::ASSET_FILES[0])])
     });
-    cx.run_until_parked();
 
-    assert_eq!(row_count(window, cx), 2);
-    view.read_with(cx, |view, _| {
-        let names: Vec<_> = view.library.assets().iter().map(|asset| asset.file.name.as_str()).collect();
-        assert_eq!(names, ["Outfit.unitypackage", "cover.png"]);
-        assert_eq!(view.pending_adds, 0);
-    });
-    cx.update_window(window, |_, window, _| assert!(window.try_find("empty-state").is_none()))
-        .unwrap();
+    assert_eq!(count(window, "asset", cx), 1);
 }
 
 #[gpui_kit::test]
-fn dropping_files_adds_them_and_counts_failures(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let model = dir.path().join("body.fbx");
-    fs::write(&model, b"Kaydara FBX Binary  \x00").unwrap();
-    let (window, view) = open(cx);
+fn dropping_a_folder_imports_it_once_and_counts_failures(cx: &mut TestAppContext) {
+    let assets = fixtures::asset_dir();
+    let Fixture { library, dir: _dir } = fixtures::empty();
+    let (window, view) = open_library(library, cx);
 
-    drop_paths(window, vec![model, dir.path().join("missing.zip")], cx);
-    cx.run_until_parked();
+    drop_paths(window, vec![assets.path().to_path_buf(), assets.path().join("missing.zip")], cx);
+    view.read_with(cx, |view, _| assert_eq!(view.last_failures, 1));
+    drop_paths(window, vec![assets.path().to_path_buf()], cx);
 
-    assert_eq!(row_count(window, cx), 1);
-    view.read_with(cx, |view, _| {
-        assert_eq!(view.library.assets().len(), 1);
-        assert_eq!(view.last_failures, 1);
+    assert_eq!(count(window, "asset", cx), fixtures::ASSET_FILES.len());
+    view.read_with(cx, |view, _| assert_eq!(view.last_failures, 0));
+}
+
+#[gpui_kit::test]
+fn scope_filters_and_search_narrow_the_grid(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::library(3, 40);
+    let all = library.count(&Scope::All);
+    let inbox = library.count(&Scope::Inbox);
+    let in_library = library.count(&Scope::InLibrary);
+    let (tag, tagged) = library
+        .tag_counts()
+        .first()
+        .map(|(tag, count)| (tag.id, *count))
+        .unwrap();
+    let word = library.items()[0].title.split(' ').next().unwrap().to_owned();
+    let found = library.query(&Scope::All, &word, SortKey::Added).len();
+    let (window, _) = open_library(library, cx);
+
+    assert_eq!(count(window, "asset", cx), all);
+    click(window, "scope-inbox", cx);
+    assert_eq!(count(window, "asset", cx), inbox);
+    click(window, "scope-in-library", cx);
+    assert_eq!(count(window, "asset", cx), in_library);
+    click(window, format!("scope-tag-{}", tag.0), cx);
+    assert_eq!(count(window, "asset", cx), tagged);
+    click(window, "scope-all", cx);
+    type_into(window, "search", &word, cx);
+    assert_eq!(count(window, "asset", cx), found);
+}
+
+#[gpui_kit::test]
+fn the_plus_button_adds_a_folder(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::empty();
+    let (window, view) = open_library(library, cx);
+
+    click(window, "add-folder", cx);
+    click(window, "add-folder", cx);
+
+    view.read_with(cx, |view, cx| {
+        let library = view.store.read(cx).library().unwrap();
+        let names: Vec<_> = library.folder_tree().iter().map(|row| row.folder.name.clone()).collect();
+        assert_eq!(names, ["Default", "New folder 1", "New folder 2"]);
     });
 }
 
 #[gpui_kit::test]
-fn dropping_the_same_file_twice_keeps_one_row(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let archive = dir.path().join("hair.zip");
-    fs::write(&archive, b"PK\x03\x04").unwrap();
-    let (window, _) = open(cx);
+fn the_detail_panel_adds_to_library_and_sets_tags_and_folders(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::library(3, 40);
+    let (window, view) = open_library(library, cx);
+    click(window, "scope-inbox", cx);
+    let id = view.read_with(cx, |view, _| view.rows[0]);
 
-    drop_paths(window, vec![archive.clone()], cx);
-    cx.run_until_parked();
-    drop_paths(window, vec![archive], cx);
-    cx.run_until_parked();
+    assert!(!exists(window, "detail", cx));
+    click(window, ("asset", 0usize), cx);
+    assert!(exists(window, "detail", cx));
+    type_into(window, "tag-input", "wishlist", cx);
+    press(window, "enter", cx);
+    type_into(window, "folder-input", "Gloves", cx);
+    press(window, "enter", cx);
+    click(window, "add-to-library", cx);
 
-    assert_eq!(row_count(window, cx), 1);
+    view.read_with(cx, |view, cx| {
+        let library = view.store.read(cx).library().unwrap();
+        assert_eq!(library.item(id).unwrap().status, ItemStatus::Confirmed);
+        assert!(library.tags_of(id).iter().any(|tag| tag.name == "wishlist"));
+        assert!(library.folders_of(id).iter().any(|folder| folder.name == "Gloves"));
+        assert!(!view.rows.contains(&id));
+    });
 }
 
 #[gpui_kit::test]
-fn table_layout_and_scope_filters_show_the_matching_assets(cx: &mut TestAppContext) {
-    let dir = tempfile::tempdir().unwrap();
-    let archive = dir.path().join("hair.zip");
-    let cover = dir.path().join("cover.png");
-    fs::write(&archive, b"PK\x03\x04").unwrap();
-    fs::write(&cover, b"\x89PNG\r\n\x1a\n").unwrap();
-    let (window, view) = open(cx);
-    drop_paths(window, vec![archive, cover], cx);
-    cx.run_until_parked();
+fn table_layout_lists_the_same_rows(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::library(3, 40);
+    let (window, view) = open_library(library, cx);
 
-    cx.update_window(window, |_, window, cx| {
-        window.render_frame(cx);
-        window.click("layout-table", cx);
-    })
-    .unwrap();
-    view.read_with(cx, |view, _| assert_eq!(view.layout, super::Layout::Table));
-    assert_eq!(row_count(window, cx), 2);
+    click(window, "layout-table", cx);
 
-    cx.update_window(window, |_, window, cx| window.click("scope-kind-Image", cx))
-        .unwrap();
-    assert_eq!(row_count(window, cx), 1);
-    cx.update_window(window, |_, window, cx| window.click("scope-untagged", cx))
-        .unwrap();
-    assert_eq!(row_count(window, cx), 2);
+    assert!(exists(window, "asset-table", cx));
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.layout, Layout::Table);
+        let rows: Vec<_> = view.table.read(cx).delegate().rows.iter().map(|row| row.id).collect();
+        assert_eq!(rows, view.rows);
+    });
+}
+
+#[gpui_kit::test]
+fn double_clicking_a_card_opens_the_item_page_and_back_returns(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::library(3, 10);
+    let (window, _) = open_library(library, cx);
+
+    double_click(window, ("asset", 0usize), cx);
+    assert!(exists(window, "item-page", cx));
+    assert!(!exists(window, "filters", cx));
+
+    click(window, "back", cx);
+    assert!(!exists(window, "item-page", cx));
+    assert!(exists(window, "filters", cx));
 }
