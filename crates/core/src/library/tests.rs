@@ -198,3 +198,44 @@ fn tag_counts_skip_tags_no_item_uses_any_more() {
 
     assert!(library.tag_counts().is_empty());
 }
+
+fn assert_matches_a_full_reload(library: &Library, dir: &std::path::Path) {
+    let incremental = library.snapshot();
+    let reloaded = Library::open(dir).unwrap().snapshot();
+    assert_eq!(incremental.catalog, reloaded.catalog);
+    assert_eq!(incremental.facts, reloaded.facts);
+}
+
+#[test]
+fn every_write_keeps_the_snapshot_equal_to_a_full_reload() {
+    let (dir, mut library) = sample();
+    assert_matches_a_full_reload(&library, dir.path());
+    let gloves = id_of(&library, "Gloves");
+    let hair = id_of(&library, "Hair");
+
+    let outfit = library.tag_item(gloves, "outfit").unwrap().unwrap();
+    library.tag_item(hair, "outfit").unwrap();
+    assert_matches_a_full_reload(&library, dir.path());
+    library.untag_item(gloves, outfit).unwrap();
+    let folder = library.create_folder(None, "Avatars").unwrap().unwrap();
+    library.put_in_folder(hair, folder).unwrap();
+    library.put_in_folder(gloves, folder).unwrap();
+    library.remove_from_folder(gloves, folder).unwrap();
+    library
+        .update_item(
+            hair,
+            &ItemChanges {
+                status: Some(ItemStatus::Confirmed),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    library
+        .import(vec![
+            file("Boots.fbx", 5, FileKind::Model),
+            file("Hair.zip", 50, FileKind::Archive),
+        ])
+        .unwrap();
+
+    assert_matches_a_full_reload(&library, dir.path());
+}

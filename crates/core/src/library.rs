@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io::{self, Read};
 use std::ops::Deref;
@@ -10,6 +10,7 @@ use snowcase_formats::{FileKind, HEADER_LEN, detect_kind};
 use snowcase_store::{
     Blob, BlobKind, BlobLocation, Catalog, FileImport, FileRole, Folder, FolderId, Item,
     ItemChanges, ItemId, ItemStatus, Store, StoreError, Tag, TagId, Version, VersionFile,
+    VersionId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +129,7 @@ pub struct FolderRow<'a> {
     pub count: usize,
 }
 
+#[derive(Clone)]
 pub struct Snapshot {
     catalog: Catalog,
     facts: HashMap<ItemId, ItemFacts>,
@@ -169,18 +171,19 @@ impl Library {
             .filter(|file| known.insert(file.path.clone()))
             .collect();
         let added = fresh.len();
-        let result = self.store.transaction(|store| {
+        let ids = self.store.transaction(|store| {
             fresh
                 .into_iter()
-                .try_for_each(|file| import_file(store, file))
-        });
-        self.reload()?;
-        result.map(|()| added)
+                .map(|file| import_file(store, file))
+                .collect::<Result<Vec<_>, _>>()
+        })?;
+        self.refresh_items(&ids)?;
+        Ok(added)
     }
 
     pub fn update_item(&mut self, id: ItemId, changes: &ItemChanges) -> Result<(), StoreError> {
         self.store.update_item(id, changes)?;
-        self.reload()
+        self.refresh_items(&[id])
     }
 
     pub fn tag_item(&mut self, id: ItemId, name: &str) -> Result<Option<TagId>, StoreError> {
@@ -189,13 +192,15 @@ impl Library {
             return Ok(None);
         }
         let tag = self.store.tag_item(id, name)?;
-        self.reload()?;
+        let tags = self.store.load_tags()?;
+        Arc::make_mut(&mut self.snapshot).catalog.tags = tags;
+        self.refresh_items(&[id])?;
         Ok(Some(tag))
     }
 
     pub fn untag_item(&mut self, id: ItemId, tag: TagId) -> Result<(), StoreError> {
         self.store.untag_item(id, tag)?;
-        self.reload()
+        self.refresh_items(&[id])
     }
 
     pub fn create_folder(
@@ -213,68 +218,65 @@ impl Library {
             return Ok(Some(existing.id));
         }
         let folder = self.store.create_folder(parent, name)?;
-        self.reload()?;
+        let folders = self.store.load_folders()?;
+        Arc::make_mut(&mut self.snapshot).catalog.folders = folders;
         Ok(Some(folder))
     }
 
     pub fn put_in_folder(&mut self, id: ItemId, folder: FolderId) -> Result<(), StoreError> {
         self.store.put_in_folder(id, folder)?;
-        self.reload()
+        self.refresh_items(&[id])
     }
 
     pub fn remove_from_folder(&mut self, id: ItemId, folder: FolderId) -> Result<(), StoreError> {
         self.store.remove_from_folder(id, folder)?;
-        self.reload()
+        self.refresh_items(&[id])
     }
 
-    fn reload(&mut self) -> Result<(), StoreError> {
-        self.snapshot = Arc::new(Snapshot::new(self.store.load()?));
+    fn refresh_items(&mut self, ids: &[ItemId]) -> Result<(), StoreError> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let rows = self.store.load_items(ids)?;
+        Arc::make_mut(&mut self.snapshot).apply_items(ids, rows);
         Ok(())
     }
-
 }
 
 impl Snapshot {
     fn new(catalog: Catalog) -> Self {
-        let version_items: HashMap<_, _> = catalog
+        let facts = facts_of(&catalog, |_| true);
+        Self { catalog, facts }
+    }
+
+    fn apply_items(&mut self, ids: &[ItemId], rows: Catalog) {
+        let ids: HashSet<ItemId> = ids.iter().copied().collect();
+        let catalog = &mut self.catalog;
+        let versions: HashSet<VersionId> = catalog
             .versions
             .iter()
-            .map(|version| (version.id, version.item_id))
+            .filter(|version| ids.contains(&version.item_id))
+            .map(|version| version.id)
             .collect();
-        let blobs: HashMap<_, _> = catalog.blobs.iter().map(|blob| (blob.id, blob)).collect();
-        let mut facts: HashMap<ItemId, ItemFacts> = catalog
-            .items
-            .iter()
-            .map(|item| (item.id, ItemFacts::default()))
-            .collect();
-        let mut counted = BTreeSet::new();
-        for file in &catalog.version_files {
-            let Some(item) = version_items.get(&file.version_id) else {
-                continue;
-            };
-            let Some(entry) = facts.get_mut(item) else {
-                continue;
-            };
-            entry.file_count += 1;
-            entry.file_names.push(file.file_name.clone());
-            if let Some(blob) = blobs.get(&file.blob_id) {
-                entry.kinds.insert(FileKind::from(blob.kind));
-                if counted.insert((*item, blob.id)) {
-                    entry.size += blob.size;
-                }
-            }
-        }
-        for link in &catalog.item_tags {
-            if let Some(entry) = facts.get_mut(&link.item_id) {
-                entry.tags.insert(link.tag_id);
-            }
-        }
-        for link in &catalog.item_folders {
-            if let Some(entry) = facts.get_mut(&link.item_id) {
-                entry.folders.insert(link.folder_id);
-            }
-        }
-        Self { catalog, facts }
+        catalog.items.retain(|item| !ids.contains(&item.id));
+        catalog.sources.retain(|source| !ids.contains(&source.item_id));
+        catalog.versions.retain(|version| !ids.contains(&version.item_id));
+        catalog.version_files.retain(|file| !versions.contains(&file.version_id));
+        catalog.images.retain(|image| !ids.contains(&image.item_id));
+        catalog.item_tags.retain(|link| !ids.contains(&link.item_id));
+        catalog.item_folders.retain(|link| !ids.contains(&link.item_id));
+        upsert(&mut catalog.items, rows.items, |item| item.id);
+        upsert(&mut catalog.sources, rows.sources, |source| source.id);
+        upsert(&mut catalog.versions, rows.versions, |version| version.id);
+        upsert(&mut catalog.version_files, rows.version_files, |file| (file.version_id, file.blob_id));
+        upsert(&mut catalog.blobs, rows.blobs, |blob| blob.id);
+        upsert(&mut catalog.locations, rows.locations, |location| location.id);
+        upsert(&mut catalog.images, rows.images, |image| (image.item_id, image.position));
+        upsert(&mut catalog.item_tags, rows.item_tags, |link| (link.item_id, link.tag_id));
+        upsert(&mut catalog.item_folders, rows.item_folders, |link| (link.item_id, link.folder_id));
+        self.facts.retain(|id, _| !ids.contains(id));
+        self.facts
+            .extend(facts_of(&self.catalog, |id| ids.contains(&id)));
     }
 
     pub fn items(&self) -> &[Item] {
@@ -448,7 +450,60 @@ impl Deref for Library {
     }
 }
 
-fn import_file(store: &mut Store, file: FileInfo) -> Result<(), StoreError> {
+fn facts_of(catalog: &Catalog, wanted: impl Fn(ItemId) -> bool) -> HashMap<ItemId, ItemFacts> {
+    let version_items: HashMap<_, _> = catalog
+        .versions
+        .iter()
+        .filter(|version| wanted(version.item_id))
+        .map(|version| (version.id, version.item_id))
+        .collect();
+    let blobs: HashMap<_, _> = catalog.blobs.iter().map(|blob| (blob.id, blob)).collect();
+    let mut facts: HashMap<ItemId, ItemFacts> = catalog
+        .items
+        .iter()
+        .filter(|item| wanted(item.id))
+        .map(|item| (item.id, ItemFacts::default()))
+        .collect();
+    let mut counted = BTreeSet::new();
+    for file in &catalog.version_files {
+        let Some(item) = version_items.get(&file.version_id) else {
+            continue;
+        };
+        let Some(entry) = facts.get_mut(item) else {
+            continue;
+        };
+        entry.file_count += 1;
+        entry.file_names.push(file.file_name.clone());
+        if let Some(blob) = blobs.get(&file.blob_id) {
+            entry.kinds.insert(FileKind::from(blob.kind));
+            if counted.insert((*item, blob.id)) {
+                entry.size += blob.size;
+            }
+        }
+    }
+    for link in &catalog.item_tags {
+        if let Some(entry) = facts.get_mut(&link.item_id) {
+            entry.tags.insert(link.tag_id);
+        }
+    }
+    for link in &catalog.item_folders {
+        if let Some(entry) = facts.get_mut(&link.item_id) {
+            entry.folders.insert(link.folder_id);
+        }
+    }
+    facts
+}
+
+fn upsert<T, K: Ord>(rows: &mut Vec<T>, changed: Vec<T>, key: impl Fn(&T) -> K) {
+    for row in changed {
+        match rows.binary_search_by_key(&key(&row), &key) {
+            Ok(ix) => rows[ix] = row,
+            Err(ix) => rows.insert(ix, row),
+        }
+    }
+}
+
+fn import_file(store: &mut Store, file: FileInfo) -> Result<ItemId, StoreError> {
     let item = store.create_item(&title_of(&file.name), ItemStatus::Inbox)?;
     let version = store.add_version(item, None, None)?;
     store.add_file(&FileImport {
@@ -462,7 +517,7 @@ fn import_file(store: &mut Store, file: FileInfo) -> Result<(), StoreError> {
         variant: None,
         role: (file.kind == FileKind::UnityPackage).then_some(FileRole::Package),
     })?;
-    Ok(())
+    Ok(item)
 }
 
 fn title_of(file_name: &str) -> String {

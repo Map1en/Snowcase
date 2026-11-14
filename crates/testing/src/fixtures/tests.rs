@@ -1,5 +1,5 @@
 use super::*;
-use snowcase_core::library::{Scope, SortKey};
+use snowcase_core::library::{ItemFacts, Library, Scope, SortKey};
 
 fn snapshot(fixture: &Fixture) -> Vec<(String, ItemStatus, usize)> {
     let library = &fixture.library;
@@ -39,4 +39,30 @@ fn a_seeded_library_covers_the_states_tests_rely_on() {
     );
     assert!(library.folder_tree().iter().all(|row| row.count > 0));
     assert!(!library.tag_counts().is_empty());
+}
+
+type ItemView = (String, ItemStatus, Option<ItemFacts>, Vec<String>, Vec<String>);
+
+fn everything(library: &Library) -> Vec<ItemView> {
+    library
+        .items()
+        .iter()
+        .map(|item| {
+            (
+                item.title.clone(),
+                item.status,
+                library.facts(item.id).cloned(),
+                library.tags_of(item.id).iter().map(|tag| tag.name.clone()).collect(),
+                library.folders_of(item.id).iter().map(|folder| folder.name.clone()).collect(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn a_seeded_library_snapshot_matches_a_full_reload() {
+    let fixture = library(9, 60);
+    let reloaded = Library::open(fixture.dir.path()).unwrap();
+
+    assert_eq!(everything(&fixture.library), everything(&reloaded));
 }

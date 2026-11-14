@@ -133,7 +133,7 @@ impl Store {
 
     pub fn load(&mut self) -> Result<Catalog> {
         let conn = &mut self.conn;
-        Ok(Catalog {
+        let mut catalog = Catalog {
             items: item::table.order(item::id).select(Item::as_select()).load(conn)?,
             sources: item_source::table
                 .order(item_source::id)
@@ -160,20 +160,105 @@ impl Store {
                 .order((item_image::item_id, item_image::position))
                 .select(ItemImage::as_select())
                 .load(conn)?,
-            tags: tag::table.order(tag::id).select(Tag::as_select()).load(conn)?,
+            tags: Vec::new(),
             item_tags: item_tag::table
                 .order((item_tag::item_id, item_tag::tag_id))
                 .select(ItemTag::as_select())
                 .load(conn)?,
-            folders: folder::table
-                .order(folder::id)
-                .select(Folder::as_select())
-                .load(conn)?,
+            folders: Vec::new(),
             item_folders: item_folder::table
                 .order((item_folder::item_id, item_folder::folder_id))
                 .select(ItemFolder::as_select())
                 .load(conn)?,
-        })
+        };
+        catalog.tags = self.load_tags()?;
+        catalog.folders = self.load_folders()?;
+        Ok(catalog)
+    }
+
+    pub fn load_tags(&mut self) -> Result<Vec<Tag>> {
+        Ok(tag::table
+            .order(tag::id)
+            .select(Tag::as_select())
+            .load(&mut self.conn)?)
+    }
+
+    pub fn load_folders(&mut self) -> Result<Vec<Folder>> {
+        Ok(folder::table
+            .order(folder::id)
+            .select(Folder::as_select())
+            .load(&mut self.conn)?)
+    }
+
+    pub fn load_items(&mut self, ids: &[ItemId]) -> Result<Catalog> {
+        let mut rows = Catalog::default();
+        let conn = &mut self.conn;
+        for ids in ids.chunks(500) {
+            rows.items.extend(
+                item::table
+                    .filter(item::id.eq_any(ids))
+                    .order(item::id)
+                    .select(Item::as_select())
+                    .load(conn)?,
+            );
+            rows.sources.extend(
+                item_source::table
+                    .filter(item_source::item_id.eq_any(ids))
+                    .order(item_source::id)
+                    .select(ItemSource::as_select())
+                    .load(conn)?,
+            );
+            let versions: Vec<Version> = version::table
+                .filter(version::item_id.eq_any(ids))
+                .order(version::id)
+                .select(Version::as_select())
+                .load(conn)?;
+            let version_ids: Vec<VersionId> = versions.iter().map(|version| version.id).collect();
+            let files: Vec<VersionFile> = version_file::table
+                .filter(version_file::version_id.eq_any(&version_ids))
+                .order((version_file::version_id, version_file::blob_id))
+                .select(VersionFile::as_select())
+                .load(conn)?;
+            let blob_ids: Vec<BlobId> = files.iter().map(|file| file.blob_id).collect();
+            rows.blobs.extend(
+                blob::table
+                    .filter(blob::id.eq_any(&blob_ids))
+                    .order(blob::id)
+                    .select(Blob::as_select())
+                    .load(conn)?,
+            );
+            rows.locations.extend(
+                blob_location::table
+                    .filter(blob_location::blob_id.eq_any(&blob_ids))
+                    .order(blob_location::id)
+                    .select(BlobLocation::as_select())
+                    .load(conn)?,
+            );
+            rows.versions.extend(versions);
+            rows.version_files.extend(files);
+            rows.images.extend(
+                item_image::table
+                    .filter(item_image::item_id.eq_any(ids))
+                    .order((item_image::item_id, item_image::position))
+                    .select(ItemImage::as_select())
+                    .load(conn)?,
+            );
+            rows.item_tags.extend(
+                item_tag::table
+                    .filter(item_tag::item_id.eq_any(ids))
+                    .order((item_tag::item_id, item_tag::tag_id))
+                    .select(ItemTag::as_select())
+                    .load(conn)?,
+            );
+            rows.item_folders.extend(
+                item_folder::table
+                    .filter(item_folder::item_id.eq_any(ids))
+                    .order((item_folder::item_id, item_folder::folder_id))
+                    .select(ItemFolder::as_select())
+                    .load(conn)?,
+            );
+        }
+        Ok(rows)
     }
 
     pub fn create_item(&mut self, title: &str, status: ItemStatus) -> Result<ItemId> {
