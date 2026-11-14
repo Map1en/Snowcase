@@ -11,7 +11,7 @@ use gpui_kit::component::table::{DataTable, TableEvent, TableState};
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use snowcase_core::library::{Library, Scope, SortKey, collect_files, inspect_file};
+use snowcase_core::library::{Library, Scope, SortKey, Snapshot, collect_files, inspect_file};
 use snowcase_core::{FileKind, ItemChanges, ItemId, ItemStatus, LocationState, StoreError};
 
 use self::item_table::{ItemRow, ItemTable};
@@ -87,7 +87,7 @@ impl LibraryView {
                     return;
                 };
                 let name = input.read(cx).value();
-                this.change(cx, |library| library.tag_item(id, &name));
+                this.change(cx, move |library| library.tag_item(id, &name));
                 input.update(cx, |input, cx| input.set_value("", window, cx));
             }),
             cx.subscribe_in(&folder_input, window, |this, input, event, window, cx| {
@@ -96,7 +96,7 @@ impl LibraryView {
                     return;
                 };
                 let name = input.read(cx).value();
-                this.change(cx, |library| {
+                this.change(cx, move |library| {
                     if let Some(folder) = library.create_folder(None, &name)? {
                         library.put_in_folder(id, folder)?;
                     }
@@ -158,17 +158,19 @@ impl LibraryView {
         self.page.map(|(id, _)| id).or(self.selected)
     }
 
-    fn change<T>(
+    fn change<T: Send + 'static>(
         &mut self,
         cx: &mut Context<Self>,
-        change: impl FnOnce(&mut Library) -> Result<T, StoreError>,
-    ) -> Option<T> {
-        self.store.update(cx, |store, cx| store.change(cx, change))
+        change: impl FnOnce(&mut Library) -> Result<T, StoreError> + Send + 'static,
+    ) {
+        self.store
+            .update(cx, |store, cx| store.change(cx, change))
+            .detach();
     }
 
     fn refresh(&mut self, cx: &mut Context<Self>) {
         let search = self.search.read(cx).value();
-        let Some(library) = self.store.read(cx).library() else {
+        let Some(library) = self.store.read(cx).snapshot() else {
             return;
         };
         self.rows = library
@@ -224,7 +226,7 @@ impl LibraryView {
                 this.last_failures = failures.len();
                 this.pending_imports -= 1;
                 let files = files.into_iter().flatten().collect();
-                this.change(cx, |library| library.import(files));
+                this.change(cx, move |library| library.import(files));
             })
             .ok();
         })
@@ -249,7 +251,7 @@ impl LibraryView {
 
     fn add_folder(&mut self, cx: &mut Context<Self>) {
         let locale = i18n::locale(cx);
-        self.change(cx, |library| {
+        self.change(cx, move |library| {
             let taken: Vec<String> = library
                 .folder_tree()
                 .iter()
@@ -263,7 +265,7 @@ impl LibraryView {
         });
     }
 
-    fn render_filters(&self, library: &Library, cx: &Context<Self>) -> Stateful<Div> {
+    fn render_filters(&self, library: &Snapshot, cx: &Context<Self>) -> Stateful<Div> {
         let theme = cx.theme();
         let mut column = v_flex()
             .id("filters")
@@ -428,9 +430,9 @@ impl LibraryView {
 
     fn render_status(&self, store: &LibraryStore, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
-        let total = store.library().map_or(0, |library| library.items().len());
+        let total = store.snapshot().map_or(0, |library| library.items().len());
         let mut status = tr!(cx, "status.count", shown = self.rows.len(), total = total).to_string();
-        if self.pending_imports > 0 {
+        if self.pending_imports > 0 || store.is_busy() {
             status.push_str(" · ");
             status.push_str(&tr!(cx, "status.adding"));
         } else if self.last_failures > 0 {
@@ -489,7 +491,7 @@ impl LibraryView {
             .child(
                 v_virtual_list(cx.entity(), "asset-grid", sizes, move |this, range, _, cx| {
                     let store = this.store.read(cx);
-                    let Some(library) = store.library() else {
+                    let Some(library) = store.snapshot() else {
                         return Vec::new();
                     };
                     range
@@ -509,7 +511,7 @@ impl LibraryView {
             .into_any_element()
     }
 
-    fn render_card(&self, ix: usize, library: &Library, cx: &Context<Self>) -> AnyElement {
+    fn render_card(&self, ix: usize, library: &Snapshot, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let Some(item) = self.rows.get(ix).and_then(|id| library.item(*id)) else {
             return div().into_any_element();
@@ -556,7 +558,7 @@ impl LibraryView {
 
     fn render_main(&self, store: &LibraryStore, cx: &Context<Self>) -> Div {
         let muted = cx.theme().muted_foreground;
-        let body = match store.library() {
+        let body = match store.snapshot() {
             None => centered("library-error", tr!(cx, "empty.no_library"), muted),
             Some(library) if library.items().is_empty() => {
                 centered("empty-state", tr!(cx, "empty.library"), muted)
@@ -582,7 +584,7 @@ impl LibraryView {
             .child(self.render_status(store, cx))
     }
 
-    fn render_detail(&self, id: ItemId, library: &Library, cx: &Context<Self>) -> Option<AnyElement> {
+    fn render_detail(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Option<AnyElement> {
         let item = library.item(id)?;
         let header = h_flex()
             .justify_between()
@@ -627,7 +629,7 @@ impl LibraryView {
         )
     }
 
-    fn render_overview(&self, id: ItemId, library: &Library, cx: &Context<Self>) -> Div {
+    fn render_overview(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
         let Some(item) = library.item(id) else {
             return div();
@@ -641,7 +643,7 @@ impl LibraryView {
                     .compact()
                     .label(tr!(cx, "action.add_to_library"))
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.change(cx, |library| {
+                        this.change(cx, move |library| {
                             library.update_item(
                                 id,
                                 &ItemChanges {
@@ -661,7 +663,7 @@ impl LibraryView {
                 let tag_id = tag.id;
                 removable(format!("remove-tag-{}", tag_id.0), format!("# {}", tag.name), cx)
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.change(cx, |library| library.untag_item(id, tag_id));
+                        this.change(cx, move |library| library.untag_item(id, tag_id));
                     }))
             },
         ));
@@ -671,7 +673,7 @@ impl LibraryView {
                 let folder_id = folder.id;
                 removable(format!("remove-folder-{}", folder_id.0), folder.name.clone(), cx)
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.change(cx, |library| library.remove_from_folder(id, folder_id));
+                        this.change(cx, move |library| library.remove_from_folder(id, folder_id));
                     }))
             }),
         );
@@ -696,7 +698,7 @@ impl LibraryView {
         &self,
         id: ItemId,
         tab: DetailTab,
-        library: &Library,
+        library: &Snapshot,
         cx: &Context<Self>,
     ) -> Option<AnyElement> {
         let theme = cx.theme();
@@ -767,7 +769,7 @@ impl LibraryView {
 impl Render for LibraryView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let store = self.store.read(cx);
-        let library = store.library();
+        let library = store.snapshot();
         let content = match (self.page, library) {
             (Some((id, tab)), Some(library)) => self.render_page(id, tab, library, cx),
             _ => None,
@@ -809,7 +811,7 @@ impl Render for LibraryView {
     }
 }
 
-fn render_files(id: ItemId, library: &Library, cx: &App) -> Div {
+fn render_files(id: ItemId, library: &Snapshot, cx: &App) -> Div {
     let theme = cx.theme();
     let mut list = section(tr!(cx, "item.files"));
     for file in library.versions(id).into_iter().flat_map(|version| version.files) {

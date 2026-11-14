@@ -1,7 +1,9 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fs::File;
 use std::io::{self, Read};
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use snowcase_formats::{FileKind, HEADER_LEN, detect_kind};
@@ -126,10 +128,14 @@ pub struct FolderRow<'a> {
     pub count: usize,
 }
 
-pub struct Library {
-    store: Store,
+pub struct Snapshot {
     catalog: Catalog,
     facts: HashMap<ItemId, ItemFacts>,
+}
+
+pub struct Library {
+    store: Store,
+    snapshot: Arc<Snapshot>,
 }
 
 impl Library {
@@ -140,13 +146,135 @@ impl Library {
             store.create_folder(None, DEFAULT_FOLDER)?;
             catalog = store.load()?;
         }
-        let mut library = Self {
+        Ok(Self {
             store,
-            catalog,
-            facts: HashMap::new(),
-        };
-        library.index();
-        Ok(library)
+            snapshot: Arc::new(Snapshot::new(catalog)),
+        })
+    }
+
+    pub fn snapshot(&self) -> Arc<Snapshot> {
+        self.snapshot.clone()
+    }
+
+    pub fn import(&mut self, files: Vec<FileInfo>) -> Result<usize, StoreError> {
+        let mut known: BTreeSet<String> = self
+            .snapshot
+            .catalog
+            .locations
+            .iter()
+            .map(|location| location.path.clone())
+            .collect();
+        let fresh: Vec<FileInfo> = files
+            .into_iter()
+            .filter(|file| known.insert(file.path.clone()))
+            .collect();
+        let added = fresh.len();
+        let result = self.store.transaction(|store| {
+            fresh
+                .into_iter()
+                .try_for_each(|file| import_file(store, file))
+        });
+        self.reload()?;
+        result.map(|()| added)
+    }
+
+    pub fn update_item(&mut self, id: ItemId, changes: &ItemChanges) -> Result<(), StoreError> {
+        self.store.update_item(id, changes)?;
+        self.reload()
+    }
+
+    pub fn tag_item(&mut self, id: ItemId, name: &str) -> Result<Option<TagId>, StoreError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Ok(None);
+        }
+        let tag = self.store.tag_item(id, name)?;
+        self.reload()?;
+        Ok(Some(tag))
+    }
+
+    pub fn untag_item(&mut self, id: ItemId, tag: TagId) -> Result<(), StoreError> {
+        self.store.untag_item(id, tag)?;
+        self.reload()
+    }
+
+    pub fn create_folder(
+        &mut self,
+        parent: Option<FolderId>,
+        name: &str,
+    ) -> Result<Option<FolderId>, StoreError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Ok(None);
+        }
+        if let Some(existing) = self.snapshot.catalog.folders.iter().find(|folder| {
+            folder.parent_id == parent && folder.name.to_lowercase() == name.to_lowercase()
+        }) {
+            return Ok(Some(existing.id));
+        }
+        let folder = self.store.create_folder(parent, name)?;
+        self.reload()?;
+        Ok(Some(folder))
+    }
+
+    pub fn put_in_folder(&mut self, id: ItemId, folder: FolderId) -> Result<(), StoreError> {
+        self.store.put_in_folder(id, folder)?;
+        self.reload()
+    }
+
+    pub fn remove_from_folder(&mut self, id: ItemId, folder: FolderId) -> Result<(), StoreError> {
+        self.store.remove_from_folder(id, folder)?;
+        self.reload()
+    }
+
+    fn reload(&mut self) -> Result<(), StoreError> {
+        self.snapshot = Arc::new(Snapshot::new(self.store.load()?));
+        Ok(())
+    }
+
+}
+
+impl Snapshot {
+    fn new(catalog: Catalog) -> Self {
+        let version_items: HashMap<_, _> = catalog
+            .versions
+            .iter()
+            .map(|version| (version.id, version.item_id))
+            .collect();
+        let blobs: HashMap<_, _> = catalog.blobs.iter().map(|blob| (blob.id, blob)).collect();
+        let mut facts: HashMap<ItemId, ItemFacts> = catalog
+            .items
+            .iter()
+            .map(|item| (item.id, ItemFacts::default()))
+            .collect();
+        let mut counted = BTreeSet::new();
+        for file in &catalog.version_files {
+            let Some(item) = version_items.get(&file.version_id) else {
+                continue;
+            };
+            let Some(entry) = facts.get_mut(item) else {
+                continue;
+            };
+            entry.file_count += 1;
+            entry.file_names.push(file.file_name.clone());
+            if let Some(blob) = blobs.get(&file.blob_id) {
+                entry.kinds.insert(FileKind::from(blob.kind));
+                if counted.insert((*item, blob.id)) {
+                    entry.size += blob.size;
+                }
+            }
+        }
+        for link in &catalog.item_tags {
+            if let Some(entry) = facts.get_mut(&link.item_id) {
+                entry.tags.insert(link.tag_id);
+            }
+        }
+        for link in &catalog.item_folders {
+            if let Some(entry) = facts.get_mut(&link.item_id) {
+                entry.folders.insert(link.folder_id);
+            }
+        }
+        Self { catalog, facts }
     }
 
     pub fn items(&self) -> &[Item] {
@@ -252,7 +380,7 @@ impl Library {
 
     pub fn folder_tree(&self) -> Vec<FolderRow<'_>> {
         fn walk<'a>(
-            library: &'a Library,
+            library: &'a Snapshot,
             parent: Option<FolderId>,
             depth: usize,
             rows: &mut Vec<FolderRow<'a>>,
@@ -310,124 +438,13 @@ impl Library {
             })
             .collect()
     }
+}
 
-    pub fn import(&mut self, files: Vec<FileInfo>) -> Result<usize, StoreError> {
-        let mut known: BTreeSet<String> = self
-            .catalog
-            .locations
-            .iter()
-            .map(|location| location.path.clone())
-            .collect();
-        let fresh: Vec<FileInfo> = files
-            .into_iter()
-            .filter(|file| known.insert(file.path.clone()))
-            .collect();
-        let added = fresh.len();
-        let result = self.store.transaction(|store| {
-            fresh
-                .into_iter()
-                .try_for_each(|file| import_file(store, file))
-        });
-        self.reload()?;
-        result.map(|()| added)
-    }
+impl Deref for Library {
+    type Target = Snapshot;
 
-    pub fn update_item(&mut self, id: ItemId, changes: &ItemChanges) -> Result<(), StoreError> {
-        self.store.update_item(id, changes)?;
-        self.reload()
-    }
-
-    pub fn tag_item(&mut self, id: ItemId, name: &str) -> Result<Option<TagId>, StoreError> {
-        let name = name.trim();
-        if name.is_empty() {
-            return Ok(None);
-        }
-        let tag = self.store.tag_item(id, name)?;
-        self.reload()?;
-        Ok(Some(tag))
-    }
-
-    pub fn untag_item(&mut self, id: ItemId, tag: TagId) -> Result<(), StoreError> {
-        self.store.untag_item(id, tag)?;
-        self.reload()
-    }
-
-    pub fn create_folder(
-        &mut self,
-        parent: Option<FolderId>,
-        name: &str,
-    ) -> Result<Option<FolderId>, StoreError> {
-        let name = name.trim();
-        if name.is_empty() {
-            return Ok(None);
-        }
-        if let Some(existing) = self.catalog.folders.iter().find(|folder| {
-            folder.parent_id == parent && folder.name.to_lowercase() == name.to_lowercase()
-        }) {
-            return Ok(Some(existing.id));
-        }
-        let folder = self.store.create_folder(parent, name)?;
-        self.reload()?;
-        Ok(Some(folder))
-    }
-
-    pub fn put_in_folder(&mut self, id: ItemId, folder: FolderId) -> Result<(), StoreError> {
-        self.store.put_in_folder(id, folder)?;
-        self.reload()
-    }
-
-    pub fn remove_from_folder(&mut self, id: ItemId, folder: FolderId) -> Result<(), StoreError> {
-        self.store.remove_from_folder(id, folder)?;
-        self.reload()
-    }
-
-    fn reload(&mut self) -> Result<(), StoreError> {
-        self.catalog = self.store.load()?;
-        self.index();
-        Ok(())
-    }
-
-    fn index(&mut self) {
-        let catalog = &self.catalog;
-        let version_items: HashMap<_, _> = catalog
-            .versions
-            .iter()
-            .map(|version| (version.id, version.item_id))
-            .collect();
-        let blobs: HashMap<_, _> = catalog.blobs.iter().map(|blob| (blob.id, blob)).collect();
-        let mut facts: HashMap<ItemId, ItemFacts> = catalog
-            .items
-            .iter()
-            .map(|item| (item.id, ItemFacts::default()))
-            .collect();
-        let mut counted = BTreeSet::new();
-        for file in &catalog.version_files {
-            let Some(item) = version_items.get(&file.version_id) else {
-                continue;
-            };
-            let Some(entry) = facts.get_mut(item) else {
-                continue;
-            };
-            entry.file_count += 1;
-            entry.file_names.push(file.file_name.clone());
-            if let Some(blob) = blobs.get(&file.blob_id) {
-                entry.kinds.insert(FileKind::from(blob.kind));
-                if counted.insert((*item, blob.id)) {
-                    entry.size += blob.size;
-                }
-            }
-        }
-        for link in &catalog.item_tags {
-            if let Some(entry) = facts.get_mut(&link.item_id) {
-                entry.tags.insert(link.tag_id);
-            }
-        }
-        for link in &catalog.item_folders {
-            if let Some(entry) = facts.get_mut(&link.item_id) {
-                entry.folders.insert(link.folder_id);
-            }
-        }
-        self.facts = facts;
+    fn deref(&self) -> &Snapshot {
+        &self.snapshot
     }
 }
 

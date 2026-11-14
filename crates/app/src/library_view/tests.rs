@@ -13,7 +13,7 @@ fn open_library(
     cx: &mut TestAppContext,
 ) -> (AnyWindowHandle, Entity<LibraryView>) {
     open(cx, |window, cx| {
-        let store = cx.new(|_| LibraryStore::new(Ok(library)));
+        let store = cx.new(|cx| LibraryStore::new(Ok(library), cx));
         cx.new(|cx| LibraryView::new(store, window, cx))
     })
 }
@@ -94,7 +94,7 @@ fn the_plus_button_adds_a_folder(cx: &mut TestAppContext) {
     click(window, "add-folder", cx);
 
     view.read_with(cx, |view, cx| {
-        let library = view.store.read(cx).library().unwrap();
+        let library = view.store.read(cx).snapshot().unwrap();
         let names: Vec<_> = library.folder_tree().iter().map(|row| row.folder.name.clone()).collect();
         assert_eq!(names, ["Default", "New folder 1", "New folder 2"]);
     });
@@ -117,7 +117,7 @@ fn the_detail_panel_adds_to_library_and_sets_tags_and_folders(cx: &mut TestAppCo
     click(window, "add-to-library", cx);
 
     view.read_with(cx, |view, cx| {
-        let library = view.store.read(cx).library().unwrap();
+        let library = view.store.read(cx).snapshot().unwrap();
         assert_eq!(library.item(id).unwrap().status, ItemStatus::Confirmed);
         assert!(library.tags_of(id).iter().any(|tag| tag.name == "wishlist"));
         assert!(library.folders_of(id).iter().any(|folder| folder.name == "Gloves"));

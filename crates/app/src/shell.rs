@@ -27,7 +27,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let store = cx.new(|_| LibraryStore::new(library));
+        let store = cx.new(|cx| LibraryStore::new(library, cx));
         Self {
             page: Page::Library,
             library_view: cx.new(|cx| LibraryView::new(store, window, cx)),

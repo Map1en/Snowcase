@@ -1,6 +1,6 @@
 use gpui_kit::component::table::{Column, TableDelegate, TableState};
 use gpui_kit::*;
-use snowcase_core::library::Library;
+use snowcase_core::library::Snapshot;
 use snowcase_core::{ItemId, ItemStatus};
 
 use super::format_size;
@@ -12,7 +12,7 @@ pub struct ItemRow {
 }
 
 impl ItemRow {
-    pub fn new(library: &Library, id: ItemId, cx: &App) -> Option<Self> {
+    pub fn new(library: &Snapshot, id: ItemId, cx: &App) -> Option<Self> {
         let item = library.item(id)?;
         let facts = library.facts(id).cloned().unwrap_or_default();
         let status = match item.status {
