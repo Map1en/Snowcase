@@ -318,31 +318,18 @@ impl Library {
             .iter()
             .map(|location| location.path.clone())
             .collect();
-        let result = files
+        let fresh: Vec<FileInfo> = files
             .into_iter()
             .filter(|file| known.insert(file.path.clone()))
-            .try_fold(0, |added, file| self.import_file(file).map(|()| added + 1));
+            .collect();
+        let added = fresh.len();
+        let result = self.store.transaction(|store| {
+            fresh
+                .into_iter()
+                .try_for_each(|file| import_file(store, file))
+        });
         self.reload()?;
-        result
-    }
-
-    fn import_file(&mut self, file: FileInfo) -> Result<(), StoreError> {
-        let item = self
-            .store
-            .create_item(&title_of(&file.name), ItemStatus::Inbox)?;
-        let version = self.store.add_version(item, None, None)?;
-        self.store.add_file(&FileImport {
-            version_id: version,
-            path: file.path,
-            file_name: file.name,
-            size: i64::try_from(file.size).unwrap_or(i64::MAX),
-            fingerprint: format!("{}:{}", file.size, file.modified_ms),
-            kind: BlobKind::from(file.kind),
-            part: None,
-            variant: None,
-            role: (file.kind == FileKind::UnityPackage).then_some(FileRole::Package),
-        })?;
-        Ok(())
+        result.map(|()| added)
     }
 
     pub fn update_item(&mut self, id: ItemId, changes: &ItemChanges) -> Result<(), StoreError> {
@@ -442,6 +429,23 @@ impl Library {
         }
         self.facts = facts;
     }
+}
+
+fn import_file(store: &mut Store, file: FileInfo) -> Result<(), StoreError> {
+    let item = store.create_item(&title_of(&file.name), ItemStatus::Inbox)?;
+    let version = store.add_version(item, None, None)?;
+    store.add_file(&FileImport {
+        version_id: version,
+        path: file.path,
+        file_name: file.name,
+        size: i64::try_from(file.size).unwrap_or(i64::MAX),
+        fingerprint: format!("{}:{}", file.size, file.modified_ms),
+        kind: BlobKind::from(file.kind),
+        part: None,
+        variant: None,
+        role: (file.kind == FileKind::UnityPackage).then_some(FileRole::Package),
+    })?;
+    Ok(())
 }
 
 fn title_of(file_name: &str) -> String {

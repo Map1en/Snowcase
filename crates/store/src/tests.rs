@@ -236,3 +236,41 @@ fn text_enums_round_trip_through_their_text() {
     check(FileRole::ALL, FileRole::as_str);
     check(BlobKind::ALL, BlobKind::as_str);
 }
+
+fn write_everything(store: &mut Store) -> Result<ItemId> {
+    let item = store.create_item("Gloves", ItemStatus::Inbox)?;
+    let version = store.add_version(item, None, None)?;
+    store.add_file(&import(version, "D:/Gloves.unitypackage", "10:1"))?;
+    store.tag_item(item, "gloves")?;
+    let folder = store.create_folder(None, "Accessories")?;
+    store.put_in_folder(item, folder)?;
+    Ok(item)
+}
+
+#[test]
+fn a_failed_transaction_rolls_back_every_write_inside_it() {
+    let (_dir, mut store) = open();
+
+    let result = store.transaction(|store| {
+        write_everything(store)?;
+        Err::<(), _>(diesel::result::Error::RollbackTransaction.into())
+    });
+
+    assert!(result.is_err());
+    assert_eq!(store.load().unwrap(), Catalog::default());
+}
+
+#[test]
+fn a_successful_transaction_commits_nested_writes_and_the_store_stays_usable() {
+    let (_dir, mut store) = open();
+
+    let item = store.transaction(write_everything).unwrap();
+    store.create_item("Hair", ItemStatus::Inbox).unwrap();
+
+    let catalog = store.load().unwrap();
+    assert_eq!(catalog.items.len(), 2);
+    assert_eq!(catalog.items[0].id, item);
+    assert_eq!(catalog.version_files.len(), 1);
+    assert_eq!(catalog.item_tags.len(), 1);
+    assert_eq!(catalog.item_folders.len(), 1);
+}

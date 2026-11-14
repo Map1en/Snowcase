@@ -7,7 +7,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use diesel::connection::SimpleConnection;
+use diesel::connection::{AnsiTransactionManager, SimpleConnection, TransactionManager};
 use diesel::dsl::max;
 use diesel::prelude::*;
 use diesel::sql_types::Text;
@@ -117,6 +117,20 @@ impl Store {
         Ok(path)
     }
 
+    pub fn transaction<T>(&mut self, change: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+        AnsiTransactionManager::begin_transaction_sql(&mut self.conn, "BEGIN IMMEDIATE")?;
+        match change(self) {
+            Ok(value) => {
+                AnsiTransactionManager::commit_transaction(&mut self.conn)?;
+                Ok(value)
+            }
+            Err(error) => {
+                AnsiTransactionManager::rollback_transaction(&mut self.conn)?;
+                Err(error)
+            }
+        }
+    }
+
     pub fn load(&mut self) -> Result<Catalog> {
         let conn = &mut self.conn;
         Ok(Catalog {
@@ -200,7 +214,7 @@ impl Store {
     }
 
     pub fn add_file(&mut self, file: &FileImport) -> Result<BlobId> {
-        self.conn.immediate_transaction(|conn| {
+        self.conn.transaction(|conn| {
             let now = now_ms();
             let existing: Option<(LocationId, BlobId, String)> = blob_location::table
                 .inner_join(blob::table)
@@ -257,7 +271,7 @@ impl Store {
     }
 
     pub fn tag_item(&mut self, item_id: ItemId, name: &str) -> Result<TagId> {
-        self.conn.immediate_transaction(|conn| {
+        self.conn.transaction(|conn| {
             diesel::insert_or_ignore_into(tag::table)
                 .values(tag::name.eq(name))
                 .execute(conn)?;
@@ -278,7 +292,7 @@ impl Store {
     }
 
     pub fn create_folder(&mut self, parent_id: Option<FolderId>, name: &str) -> Result<FolderId> {
-        self.conn.immediate_transaction(|conn| {
+        self.conn.transaction(|conn| {
             let last: Option<i32> = folder::table
                 .filter(folder::parent_id.is(parent_id))
                 .select(max(folder::position))
@@ -305,7 +319,6 @@ impl Store {
         diesel::delete(item_folder::table.find((item_id, folder_id))).execute(&mut self.conn)?;
         Ok(())
     }
-
 }
 
 fn insert_blob(conn: &mut SqliteConnection, file: &FileImport) -> QueryResult<BlobId> {
