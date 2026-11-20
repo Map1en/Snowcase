@@ -8,9 +8,9 @@ use std::time::UNIX_EPOCH;
 
 use snowcase_formats::{FileKind, HEADER_LEN, detect_kind};
 use snowcase_store::{
-    Blob, BlobKind, BlobLocation, Catalog, FileImport, FileRole, Folder, FolderId, Item,
-    ItemChanges, ItemId, ItemStatus, Store, StoreError, Tag, TagId, Version, VersionFile,
-    VersionId,
+    Blob, BlobKind, BlobLocation, Catalog, Facet, FacetKey, FacetNode, FacetOrigin, FacetValue,
+    FileImport, Folder, FolderId, Item, ItemChanges, ItemFile, ItemId, Store, StoreError, Tag,
+    TagId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,8 +88,6 @@ pub fn collect_files(paths: &[PathBuf]) -> Vec<PathBuf> {
 pub enum Scope {
     #[default]
     All,
-    Inbox,
-    InLibrary,
     Tag(TagId),
     Folder(FolderId),
 }
@@ -112,15 +110,51 @@ pub struct ItemFacts {
     pub kinds: BTreeSet<FileKind>,
 }
 
-pub struct VersionView<'a> {
-    pub version: &'a Version,
-    pub files: Vec<FileView<'a>>,
-}
-
 pub struct FileView<'a> {
-    pub file: &'a VersionFile,
+    pub file: &'a ItemFile,
     pub blob: &'a Blob,
     pub locations: Vec<&'a BlobLocation>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedFacet {
+    pub value: String,
+    pub target_item_id: Option<ItemId>,
+    pub origin: FacetOrigin,
+    pub from: FacetNode,
+}
+
+pub fn item_node(item_id: ItemId) -> FacetNode {
+    FacetNode {
+        item_id,
+        blob_id: None,
+        inner_path: None,
+    }
+}
+
+fn parent_node(node: &FacetNode) -> Option<FacetNode> {
+    let parent = |blob_id, inner_path| FacetNode {
+        item_id: node.item_id,
+        blob_id,
+        inner_path,
+    };
+    match (&node.inner_path, node.blob_id) {
+        (Some(path), blob_id) => {
+            let cut = path.rfind('/').map(|ix| {
+                if path[..ix].ends_with('!') {
+                    ix - 1
+                } else {
+                    ix
+                }
+            });
+            match cut.filter(|ix| *ix > 0) {
+                Some(ix) => Some(parent(blob_id, Some(path[..ix].to_owned()))),
+                None => Some(parent(blob_id, None)),
+            }
+        }
+        (None, Some(_)) => Some(parent(None, None)),
+        (None, None) => None,
+    }
 }
 
 pub struct FolderRow<'a> {
@@ -164,7 +198,8 @@ impl Library {
             .catalog
             .locations
             .iter()
-            .map(|location| location.path.clone())
+            .filter(|location| location.root_id.is_none())
+            .map(|location| location.rel_path.clone())
             .collect();
         let fresh: Vec<FileInfo> = files
             .into_iter()
@@ -233,6 +268,50 @@ impl Library {
         self.refresh_items(&[id])
     }
 
+    pub fn set_auto_facets(
+        &mut self,
+        node: &FacetNode,
+        key: FacetKey,
+        values: &[FacetValue],
+    ) -> Result<(), StoreError> {
+        self.write_facets(node, key, FacetOrigin::Auto, values)
+    }
+
+    pub fn set_user_facets(
+        &mut self,
+        node: &FacetNode,
+        key: FacetKey,
+        values: &[FacetValue],
+    ) -> Result<(), StoreError> {
+        self.write_facets(node, key, FacetOrigin::User, values)
+    }
+
+    pub fn remove_facet(
+        &mut self,
+        node: &FacetNode,
+        key: FacetKey,
+        value: &str,
+    ) -> Result<(), StoreError> {
+        self.store.remove_facet(node, key, value)?;
+        self.refresh_items(&[node.item_id])
+    }
+
+    fn write_facets(
+        &mut self,
+        node: &FacetNode,
+        key: FacetKey,
+        origin: FacetOrigin,
+        values: &[FacetValue],
+    ) -> Result<(), StoreError> {
+        assert!(
+            key.multi_valued() || values.len() <= 1,
+            "{key} takes a single value, got {}",
+            values.len()
+        );
+        self.store.replace_facets(node, key, origin, values)?;
+        self.refresh_items(&[node.item_id])
+    }
+
     fn refresh_items(&mut self, ids: &[ItemId]) -> Result<(), StoreError> {
         if ids.is_empty() {
             return Ok(());
@@ -252,23 +331,17 @@ impl Snapshot {
     fn apply_items(&mut self, ids: &[ItemId], rows: Catalog) {
         let ids: HashSet<ItemId> = ids.iter().copied().collect();
         let catalog = &mut self.catalog;
-        let versions: HashSet<VersionId> = catalog
-            .versions
-            .iter()
-            .filter(|version| ids.contains(&version.item_id))
-            .map(|version| version.id)
-            .collect();
         catalog.items.retain(|item| !ids.contains(&item.id));
         catalog.sources.retain(|source| !ids.contains(&source.item_id));
-        catalog.versions.retain(|version| !ids.contains(&version.item_id));
-        catalog.version_files.retain(|file| !versions.contains(&file.version_id));
+        catalog.files.retain(|file| !ids.contains(&file.item_id));
+        catalog.facets.retain(|facet| !ids.contains(&facet.item_id));
         catalog.images.retain(|image| !ids.contains(&image.item_id));
         catalog.item_tags.retain(|link| !ids.contains(&link.item_id));
         catalog.item_folders.retain(|link| !ids.contains(&link.item_id));
         upsert(&mut catalog.items, rows.items, |item| item.id);
         upsert(&mut catalog.sources, rows.sources, |source| source.id);
-        upsert(&mut catalog.versions, rows.versions, |version| version.id);
-        upsert(&mut catalog.version_files, rows.version_files, |file| (file.version_id, file.blob_id));
+        upsert(&mut catalog.files, rows.files, |file| (file.item_id, file.blob_id));
+        upsert(&mut catalog.facets, rows.facets, |facet| facet.id);
         upsert(&mut catalog.blobs, rows.blobs, |blob| blob.id);
         upsert(&mut catalog.locations, rows.locations, |location| location.id);
         upsert(&mut catalog.images, rows.images, |image| (image.item_id, image.position));
@@ -321,8 +394,6 @@ impl Snapshot {
         let facts = self.facts.get(&item.id);
         let in_scope = match scope {
             Scope::All => true,
-            Scope::Inbox => item.status == ItemStatus::Inbox,
-            Scope::InLibrary => item.status == ItemStatus::Confirmed,
             Scope::Tag(tag) => facts.is_some_and(|facts| facts.tags.contains(tag)),
             Scope::Folder(folder) => facts.is_some_and(|facts| facts.folders.contains(folder)),
         };
@@ -408,38 +479,91 @@ impl Snapshot {
         rows
     }
 
-    pub fn versions(&self, id: ItemId) -> Vec<VersionView<'_>> {
+    pub fn files(&self, id: ItemId) -> Vec<FileView<'_>> {
         let catalog = &self.catalog;
-        let mut versions: Vec<_> = catalog
-            .versions
+        let mut files: Vec<FileView<'_>> = catalog
+            .files
             .iter()
-            .filter(|version| version.item_id == id)
-            .collect();
-        versions.sort_by_key(|version| std::cmp::Reverse((version.added_at, version.id)));
-        versions
-            .into_iter()
-            .map(|version| VersionView {
-                version,
-                files: catalog
-                    .version_files
-                    .iter()
-                    .filter(|file| file.version_id == version.id)
-                    .filter_map(|file| {
-                        let blob = catalog.blobs.iter().find(|blob| blob.id == file.blob_id)?;
-                        Some(FileView {
-                            file,
-                            blob,
-                            locations: catalog
-                                .locations
-                                .iter()
-                                .filter(|location| location.blob_id == blob.id)
-                                .collect(),
-                        })
-                    })
-                    .collect(),
+            .filter(|file| file.item_id == id)
+            .filter_map(|file| {
+                let blob = catalog.blobs.iter().find(|blob| blob.id == file.blob_id)?;
+                Some(FileView {
+                    file,
+                    blob,
+                    locations: catalog
+                        .locations
+                        .iter()
+                        .filter(|location| location.blob_id == blob.id)
+                        .collect(),
+                })
             })
-            .collect()
+            .collect();
+        files.sort_by_key(|view| std::cmp::Reverse((view.file.added_at, view.file.blob_id)));
+        files
     }
+
+    pub fn location_path(&self, location: &BlobLocation) -> String {
+        match location.root_id {
+            None => location.rel_path.clone(),
+            Some(root_id) => {
+                let root = self
+                    .catalog
+                    .roots
+                    .iter()
+                    .find(|root| root.id == root_id)
+                    .map_or("", |root| root.path.as_str());
+                Path::new(root).join(&location.rel_path).to_string_lossy().into_owned()
+            }
+        }
+    }
+
+    pub fn facets(&self, node: &FacetNode, key: FacetKey) -> Vec<ResolvedFacet> {
+        let rows: Vec<&Facet> = self
+            .catalog
+            .facets
+            .iter()
+            .filter(|facet| facet.item_id == node.item_id && facet.key == key)
+            .collect();
+        resolve(&rows, node)
+    }
+}
+
+fn resolve(rows: &[&Facet], node: &FacetNode) -> Vec<ResolvedFacet> {
+    let here: Vec<&Facet> = rows
+        .iter()
+        .copied()
+        .filter(|facet| facet.blob_id == node.blob_id && facet.inner_path == node.inner_path)
+        .collect();
+    let removed: HashSet<&str> = here
+        .iter()
+        .filter(|facet| facet.removed)
+        .map(|facet| facet.value.as_str())
+        .collect();
+    let of = |origin| {
+        here.iter()
+            .filter(move |facet| !facet.removed && facet.origin == origin)
+            .map(|facet| ResolvedFacet {
+                value: facet.value.clone(),
+                target_item_id: facet.target_item_id,
+                origin,
+                from: node.clone(),
+            })
+            .collect::<Vec<_>>()
+    };
+    let user = of(FacetOrigin::User);
+    if !user.is_empty() {
+        return user;
+    }
+    let auto = of(FacetOrigin::Auto);
+    if !auto.is_empty() {
+        return auto;
+    }
+    parent_node(node)
+        .map(|parent| resolve(rows, &parent))
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|facet| !removed.contains(facet.value.as_str()))
+        .collect()
 }
 
 impl Deref for Library {
@@ -451,12 +575,6 @@ impl Deref for Library {
 }
 
 fn facts_of(catalog: &Catalog, wanted: impl Fn(ItemId) -> bool) -> HashMap<ItemId, ItemFacts> {
-    let version_items: HashMap<_, _> = catalog
-        .versions
-        .iter()
-        .filter(|version| wanted(version.item_id))
-        .map(|version| (version.id, version.item_id))
-        .collect();
     let blobs: HashMap<_, _> = catalog.blobs.iter().map(|blob| (blob.id, blob)).collect();
     let mut facts: HashMap<ItemId, ItemFacts> = catalog
         .items
@@ -465,18 +583,16 @@ fn facts_of(catalog: &Catalog, wanted: impl Fn(ItemId) -> bool) -> HashMap<ItemI
         .map(|item| (item.id, ItemFacts::default()))
         .collect();
     let mut counted = BTreeSet::new();
-    for file in &catalog.version_files {
-        let Some(item) = version_items.get(&file.version_id) else {
-            continue;
-        };
-        let Some(entry) = facts.get_mut(item) else {
+    for file in &catalog.files {
+        let item = file.item_id;
+        let Some(entry) = facts.get_mut(&item) else {
             continue;
         };
         entry.file_count += 1;
         entry.file_names.push(file.file_name.clone());
         if let Some(blob) = blobs.get(&file.blob_id) {
             entry.kinds.insert(FileKind::from(blob.kind));
-            if counted.insert((*item, blob.id)) {
+            if counted.insert((item, blob.id)) {
                 entry.size += blob.size;
             }
         }
@@ -504,18 +620,17 @@ fn upsert<T, K: Ord>(rows: &mut Vec<T>, changed: Vec<T>, key: impl Fn(&T) -> K) 
 }
 
 fn import_file(store: &mut Store, file: FileInfo) -> Result<ItemId, StoreError> {
-    let item = store.create_item(&title_of(&file.name), ItemStatus::Inbox)?;
-    let version = store.add_version(item, None, None)?;
+    let item = store.create_item(&title_of(&file.name))?;
     store.add_file(&FileImport {
-        version_id: version,
-        path: file.path,
+        item_id: item,
+        root_id: None,
+        rel_path: file.path,
         file_name: file.name,
+        display_name: None,
         size: i64::try_from(file.size).unwrap_or(i64::MAX),
         fingerprint: format!("{}:{}", file.size, file.modified_ms),
+        crc32: None,
         kind: BlobKind::from(file.kind),
-        part: None,
-        variant: None,
-        role: (file.kind == FileKind::UnityPackage).then_some(FileRole::Package),
     })?;
     Ok(item)
 }

@@ -32,7 +32,7 @@ macro_rules! id_type {
     )*};
 }
 
-id_type!(ItemId, SourceId, VersionId, BlobId, LocationId, TagId, FolderId);
+id_type!(ItemId, SourceId, RootId, BlobId, LocationId, FacetId, TagId, FolderId);
 
 #[derive(Debug, thiserror::Error)]
 #[error("unknown {kind} value {value:?}")]
@@ -95,11 +95,6 @@ macro_rules! text_enum {
     };
 }
 
-text_enum!(ItemStatus {
-    Inbox => "inbox",
-    Confirmed => "confirmed",
-});
-
 text_enum!(StoreKind {
     Booth => "booth",
     Other => "other",
@@ -118,13 +113,22 @@ text_enum!(ImageOrigin {
     Package => "package",
 });
 
-text_enum!(FileRole {
-    Package => "package",
-    Texture => "texture",
-    Source => "source",
-    Document => "document",
-    Sample => "sample",
-    Other => "other",
+text_enum!(FacetKey {
+    Target => "target",
+    Version => "version",
+    Role => "role",
+    Color => "color",
+});
+
+impl FacetKey {
+    pub fn multi_valued(self) -> bool {
+        self == Self::Target
+    }
+}
+
+text_enum!(FacetOrigin {
+    Auto => "auto",
+    User => "user",
 });
 
 text_enum!(BlobKind {
@@ -164,7 +168,6 @@ impl From<BlobKind> for FileKind {
 pub struct Item {
     pub id: ItemId,
     pub title: String,
-    pub status: ItemStatus,
     pub note: String,
     pub cover_media: Option<String>,
     pub created_at: i64,
@@ -175,7 +178,6 @@ pub struct Item {
 #[diesel(table_name = item)]
 pub struct ItemChanges {
     pub title: Option<String>,
-    pub status: Option<ItemStatus>,
     pub note: Option<String>,
 }
 
@@ -192,13 +194,10 @@ pub struct ItemSource {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable)]
-#[diesel(table_name = version, check_for_backend(Sqlite))]
-pub struct Version {
-    pub id: VersionId,
-    pub item_id: ItemId,
-    pub label: Option<String>,
-    pub released_at: Option<i64>,
-    pub added_at: i64,
+#[diesel(table_name = root, check_for_backend(Sqlite))]
+pub struct Root {
+    pub id: RootId,
+    pub path: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable)]
@@ -208,6 +207,7 @@ pub struct Blob {
     pub hash: Option<String>,
     pub size: i64,
     pub fingerprint: String,
+    pub crc32: Option<i64>,
     pub kind: BlobKind,
 }
 
@@ -216,33 +216,62 @@ pub struct Blob {
 pub struct BlobLocation {
     pub id: LocationId,
     pub blob_id: BlobId,
-    pub path: String,
+    pub root_id: Option<RootId>,
+    pub rel_path: String,
     pub state: LocationState,
     pub last_seen: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable)]
-#[diesel(table_name = version_file, check_for_backend(Sqlite))]
-pub struct VersionFile {
-    pub version_id: VersionId,
+#[diesel(table_name = item_file, check_for_backend(Sqlite))]
+pub struct ItemFile {
+    pub item_id: ItemId,
     pub blob_id: BlobId,
     pub file_name: String,
-    pub part: Option<String>,
-    pub variant: Option<String>,
-    pub role: Option<FileRole>,
+    pub display_name: Option<String>,
+    pub added_at: i64,
+    pub extracted_from_blob_id: Option<BlobId>,
+    pub extracted_from_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileImport {
-    pub version_id: VersionId,
-    pub path: String,
+    pub item_id: ItemId,
+    pub root_id: Option<RootId>,
+    pub rel_path: String,
     pub file_name: String,
+    pub display_name: Option<String>,
     pub size: i64,
     pub fingerprint: String,
+    pub crc32: Option<i64>,
     pub kind: BlobKind,
-    pub part: Option<String>,
-    pub variant: Option<String>,
-    pub role: Option<FileRole>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct FacetNode {
+    pub item_id: ItemId,
+    pub blob_id: Option<BlobId>,
+    pub inner_path: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable)]
+#[diesel(table_name = facet, check_for_backend(Sqlite))]
+pub struct Facet {
+    pub id: FacetId,
+    pub item_id: ItemId,
+    pub blob_id: Option<BlobId>,
+    pub inner_path: Option<String>,
+    pub key: FacetKey,
+    pub value: String,
+    pub target_item_id: Option<ItemId>,
+    pub origin: FacetOrigin,
+    pub removed: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FacetValue {
+    pub value: String,
+    pub target_item_id: Option<ItemId>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable)]
@@ -298,8 +327,9 @@ pub struct ItemFolder {
 pub struct Catalog {
     pub items: Vec<Item>,
     pub sources: Vec<ItemSource>,
-    pub versions: Vec<Version>,
-    pub version_files: Vec<VersionFile>,
+    pub roots: Vec<Root>,
+    pub files: Vec<ItemFile>,
+    pub facets: Vec<Facet>,
     pub blobs: Vec<Blob>,
     pub locations: Vec<BlobLocation>,
     pub media: Vec<Media>,

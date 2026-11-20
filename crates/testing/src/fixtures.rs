@@ -5,7 +5,7 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use snowcase_core::FileKind;
 use snowcase_core::library::{FileInfo, Library};
-use snowcase_core::{FolderId, ItemChanges, ItemStatus};
+use snowcase_core::FolderId;
 
 const NOUNS: [&str; 8] = [
     "Avatar", "Outfit", "Earrings", "Hair", "Shader", "Tool", "Textures", "Set",
@@ -53,20 +53,6 @@ pub fn library(seed: u64, count: usize) -> Fixture {
 
     let ids: Vec<_> = library.items().iter().map(|item| item.id).collect();
     for id in ids {
-        let status = if pick(&mut rng, 10) < 3 {
-            ItemStatus::Inbox
-        } else {
-            ItemStatus::Confirmed
-        };
-        library
-            .update_item(
-                id,
-                &ItemChanges {
-                    status: Some(status),
-                    ..Default::default()
-                },
-            )
-            .expect("update fixture item");
         if pick(&mut rng, 2) == 0 {
             let folder = folders[pick(&mut rng, folders.len())];
             library.put_in_folder(id, folder).expect("file fixture item");

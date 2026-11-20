@@ -1,6 +1,6 @@
+use gpui_kit::component::table::TableDelegate;
 use gpui_kit::{AnyWindowHandle, AppContext, Entity, TestAppContext};
 use snowcase_core::library::{Library, Scope, SortKey};
-use snowcase_core::ItemStatus;
 use snowcase_testing::fixtures::{self, Fixture};
 use snowcase_testing::ui::{click, count, double_click, drop_paths, exists, open, press, type_into};
 
@@ -62,8 +62,6 @@ fn dropping_a_folder_imports_it_once_and_counts_failures(cx: &mut TestAppContext
 fn scope_filters_and_search_narrow_the_grid(cx: &mut TestAppContext) {
     let Fixture { library, dir: _dir } = fixtures::library(3, 40);
     let all = library.count(&Scope::All);
-    let inbox = library.count(&Scope::Inbox);
-    let in_library = library.count(&Scope::InLibrary);
     let (tag, tagged) = library
         .tag_counts()
         .first()
@@ -74,10 +72,6 @@ fn scope_filters_and_search_narrow_the_grid(cx: &mut TestAppContext) {
     let (window, _) = open_library(library, cx);
 
     assert_eq!(count(window, "asset", cx), all);
-    click(window, "scope-inbox", cx);
-    assert_eq!(count(window, "asset", cx), inbox);
-    click(window, "scope-in-library", cx);
-    assert_eq!(count(window, "asset", cx), in_library);
     click(window, format!("scope-tag-{}", tag.0), cx);
     assert_eq!(count(window, "asset", cx), tagged);
     click(window, "scope-all", cx);
@@ -101,10 +95,9 @@ fn the_plus_button_adds_a_folder(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn the_detail_panel_adds_to_library_and_sets_tags_and_folders(cx: &mut TestAppContext) {
+fn the_detail_panel_sets_tags_and_folders(cx: &mut TestAppContext) {
     let Fixture { library, dir: _dir } = fixtures::library(3, 40);
     let (window, view) = open_library(library, cx);
-    click(window, "scope-inbox", cx);
     let id = view.read_with(cx, |view, _| view.rows[0]);
 
     assert!(!exists(window, "detail", cx));
@@ -114,14 +107,12 @@ fn the_detail_panel_adds_to_library_and_sets_tags_and_folders(cx: &mut TestAppCo
     press(window, "enter", cx);
     type_into(window, "folder-input", "Gloves", cx);
     press(window, "enter", cx);
-    click(window, "add-to-library", cx);
 
     view.read_with(cx, |view, cx| {
         let library = view.store.read(cx).snapshot().unwrap();
-        assert_eq!(library.item(id).unwrap().status, ItemStatus::Confirmed);
         assert!(library.tags_of(id).iter().any(|tag| tag.name == "wishlist"));
         assert!(library.folders_of(id).iter().any(|folder| folder.name == "Gloves"));
-        assert!(!view.rows.contains(&id));
+        assert!(view.rows.contains(&id));
     });
 }
 
@@ -155,7 +146,7 @@ fn double_clicking_a_card_opens_the_item_page_and_back_returns(cx: &mut TestAppC
 }
 
 #[gpui_kit::test]
-fn switching_language_relabels_inputs_and_table_rows(cx: &mut TestAppContext) {
+fn switching_language_relabels_inputs_and_table_headers(cx: &mut TestAppContext) {
     let Fixture { library, dir: _dir } = fixtures::library(3, 10);
     let (window, view) = open_library(library, cx);
     click(window, "layout-table", cx);
@@ -167,7 +158,7 @@ fn switching_language_relabels_inputs_and_table_rows(cx: &mut TestAppContext) {
     assert!(exists(window, "asset-table", cx));
     view.read_with(cx, |view, cx| {
         assert_eq!(placeholder(view, cx), "タイトル・タグ・ファイルを検索");
-        let statuses: Vec<_> = view.table.read(cx).delegate().rows.iter().map(|row| row.status().to_string()).collect();
-        assert!(statuses.iter().all(|status| status == "未整理" || status == "登録済み"));
+        let header = view.table.read(cx).delegate().column(0, cx).name;
+        assert_eq!(header, "名前");
     });
 }

@@ -139,13 +139,14 @@ impl Store {
                 .order(item_source::id)
                 .select(ItemSource::as_select())
                 .load(conn)?,
-            versions: version::table
-                .order(version::id)
-                .select(Version::as_select())
+            roots: Vec::new(),
+            files: item_file::table
+                .order((item_file::item_id, item_file::blob_id))
+                .select(ItemFile::as_select())
                 .load(conn)?,
-            version_files: version_file::table
-                .order((version_file::version_id, version_file::blob_id))
-                .select(VersionFile::as_select())
+            facets: facet::table
+                .order(facet::id)
+                .select(Facet::as_select())
                 .load(conn)?,
             blobs: blob::table.order(blob::id).select(Blob::as_select()).load(conn)?,
             locations: blob_location::table
@@ -171,9 +172,17 @@ impl Store {
                 .select(ItemFolder::as_select())
                 .load(conn)?,
         };
+        catalog.roots = self.load_roots()?;
         catalog.tags = self.load_tags()?;
         catalog.folders = self.load_folders()?;
         Ok(catalog)
+    }
+
+    fn load_roots(&mut self) -> Result<Vec<Root>> {
+        Ok(root::table
+            .order(root::id)
+            .select(Root::as_select())
+            .load(&mut self.conn)?)
     }
 
     pub fn load_tags(&mut self) -> Result<Vec<Tag>> {
@@ -208,16 +217,10 @@ impl Store {
                     .select(ItemSource::as_select())
                     .load(conn)?,
             );
-            let versions: Vec<Version> = version::table
-                .filter(version::item_id.eq_any(ids))
-                .order(version::id)
-                .select(Version::as_select())
-                .load(conn)?;
-            let version_ids: Vec<VersionId> = versions.iter().map(|version| version.id).collect();
-            let files: Vec<VersionFile> = version_file::table
-                .filter(version_file::version_id.eq_any(&version_ids))
-                .order((version_file::version_id, version_file::blob_id))
-                .select(VersionFile::as_select())
+            let files: Vec<ItemFile> = item_file::table
+                .filter(item_file::item_id.eq_any(ids))
+                .order((item_file::item_id, item_file::blob_id))
+                .select(ItemFile::as_select())
                 .load(conn)?;
             let blob_ids: Vec<BlobId> = files.iter().map(|file| file.blob_id).collect();
             rows.blobs.extend(
@@ -234,8 +237,14 @@ impl Store {
                     .select(BlobLocation::as_select())
                     .load(conn)?,
             );
-            rows.versions.extend(versions);
-            rows.version_files.extend(files);
+            rows.files.extend(files);
+            rows.facets.extend(
+                facet::table
+                    .filter(facet::item_id.eq_any(ids))
+                    .order(facet::id)
+                    .select(Facet::as_select())
+                    .load(conn)?,
+            );
             rows.images.extend(
                 item_image::table
                     .filter(item_image::item_id.eq_any(ids))
@@ -261,12 +270,11 @@ impl Store {
         Ok(rows)
     }
 
-    pub fn create_item(&mut self, title: &str, status: ItemStatus) -> Result<ItemId> {
+    pub fn create_item(&mut self, title: &str) -> Result<ItemId> {
         let now = now_ms();
         Ok(diesel::insert_into(item::table)
             .values((
                 item::title.eq(title),
-                item::status.eq(status),
                 item::created_at.eq(now),
                 item::updated_at.eq(now),
             ))
@@ -281,21 +289,16 @@ impl Store {
         Ok(())
     }
 
-    pub fn add_version(
-        &mut self,
-        item_id: ItemId,
-        label: Option<&str>,
-        released_at: Option<i64>,
-    ) -> Result<VersionId> {
-        Ok(diesel::insert_into(version::table)
-            .values((
-                version::item_id.eq(item_id),
-                version::label.eq(label),
-                version::released_at.eq(released_at),
-                version::added_at.eq(now_ms()),
-            ))
-            .returning(version::id)
-            .get_result(&mut self.conn)?)
+    pub fn add_root(&mut self, path: &str) -> Result<RootId> {
+        self.conn.transaction(|conn| {
+            diesel::insert_or_ignore_into(root::table)
+                .values(root::path.eq(path))
+                .execute(conn)?;
+            Ok(root::table
+                .filter(root::path.eq(path))
+                .select(root::id)
+                .first(conn)?)
+        })
     }
 
     pub fn add_file(&mut self, file: &FileImport) -> Result<BlobId> {
@@ -303,7 +306,8 @@ impl Store {
             let now = now_ms();
             let existing: Option<(LocationId, BlobId, String)> = blob_location::table
                 .inner_join(blob::table)
-                .filter(blob_location::path.eq(&file.path))
+                .filter(blob_location::root_id.is(file.root_id))
+                .filter(blob_location::rel_path.eq(&file.rel_path))
                 .select((blob_location::id, blob::id, blob::fingerprint))
                 .first(conn)
                 .optional()?;
@@ -333,7 +337,8 @@ impl Store {
                     diesel::insert_into(blob_location::table)
                         .values((
                             blob_location::blob_id.eq(blob_id),
-                            blob_location::path.eq(&file.path),
+                            blob_location::root_id.eq(file.root_id),
+                            blob_location::rel_path.eq(&file.rel_path),
                             blob_location::state.eq(LocationState::Present),
                             blob_location::last_seen.eq(now),
                         ))
@@ -341,17 +346,91 @@ impl Store {
                     blob_id
                 }
             };
-            diesel::insert_or_ignore_into(version_file::table)
-                .values(VersionFile {
-                    version_id: file.version_id,
+            diesel::insert_or_ignore_into(item_file::table)
+                .values(ItemFile {
+                    item_id: file.item_id,
                     blob_id,
                     file_name: file.file_name.clone(),
-                    part: file.part.clone(),
-                    variant: file.variant.clone(),
-                    role: file.role,
+                    display_name: file.display_name.clone(),
+                    added_at: now,
+                    extracted_from_blob_id: None,
+                    extracted_from_path: None,
                 })
                 .execute(conn)?;
             Ok(blob_id)
+        })
+    }
+
+    pub fn replace_facets(
+        &mut self,
+        node: &FacetNode,
+        key: FacetKey,
+        origin: FacetOrigin,
+        values: &[FacetValue],
+    ) -> Result<()> {
+        self.conn.transaction(|conn| {
+            diesel::delete(
+                facet::table
+                    .filter(facet::item_id.eq(node.item_id))
+                    .filter(facet::blob_id.is(node.blob_id))
+                    .filter(facet::inner_path.is(node.inner_path.as_deref()))
+                    .filter(facet::key.eq(key))
+                    .filter(facet::origin.eq(origin))
+                    .filter(facet::removed.eq(false)),
+            )
+            .execute(conn)?;
+            if origin == FacetOrigin::User {
+                let names: Vec<&str> = values.iter().map(|value| value.value.as_str()).collect();
+                diesel::delete(
+                    facet::table
+                        .filter(facet::item_id.eq(node.item_id))
+                        .filter(facet::blob_id.is(node.blob_id))
+                        .filter(facet::inner_path.is(node.inner_path.as_deref()))
+                        .filter(facet::key.eq(key))
+                        .filter(facet::value.eq_any(names)),
+                )
+                .execute(conn)?;
+            }
+            for value in values {
+                diesel::insert_or_ignore_into(facet::table)
+                    .values((
+                        facet::item_id.eq(node.item_id),
+                        facet::blob_id.eq(node.blob_id),
+                        facet::inner_path.eq(node.inner_path.as_deref()),
+                        facet::key.eq(key),
+                        facet::value.eq(&value.value),
+                        facet::target_item_id.eq(value.target_item_id),
+                        facet::origin.eq(origin),
+                    ))
+                    .execute(conn)?;
+            }
+            Ok(())
+        })
+    }
+
+    pub fn remove_facet(&mut self, node: &FacetNode, key: FacetKey, value: &str) -> Result<()> {
+        self.conn.transaction(|conn| {
+            diesel::delete(
+                facet::table
+                    .filter(facet::item_id.eq(node.item_id))
+                    .filter(facet::blob_id.is(node.blob_id))
+                    .filter(facet::inner_path.is(node.inner_path.as_deref()))
+                    .filter(facet::key.eq(key))
+                    .filter(facet::value.eq(value)),
+            )
+            .execute(conn)?;
+            diesel::insert_into(facet::table)
+                .values((
+                    facet::item_id.eq(node.item_id),
+                    facet::blob_id.eq(node.blob_id),
+                    facet::inner_path.eq(node.inner_path.as_deref()),
+                    facet::key.eq(key),
+                    facet::value.eq(value),
+                    facet::origin.eq(FacetOrigin::User),
+                    facet::removed.eq(true),
+                ))
+                .execute(conn)?;
+            Ok(())
         })
     }
 
@@ -411,6 +490,7 @@ fn insert_blob(conn: &mut SqliteConnection, file: &FileImport) -> QueryResult<Bl
         .values((
             blob::size.eq(file.size),
             blob::fingerprint.eq(&file.fingerprint),
+            blob::crc32.eq(file.crc32),
             blob::kind.eq(file.kind),
         ))
         .returning(blob::id)

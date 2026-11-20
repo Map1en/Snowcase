@@ -6,6 +6,7 @@ diesel::table! {
         hash -> Nullable<Text>,
         size -> BigInt,
         fingerprint -> Text,
+        crc32 -> Nullable<BigInt>,
         kind -> Text,
     }
 }
@@ -14,9 +15,24 @@ diesel::table! {
     blob_location (id) {
         id -> BigInt,
         blob_id -> BigInt,
-        path -> Text,
+        root_id -> Nullable<BigInt>,
+        rel_path -> Text,
         state -> Text,
         last_seen -> BigInt,
+    }
+}
+
+diesel::table! {
+    facet (id) {
+        id -> BigInt,
+        item_id -> BigInt,
+        blob_id -> Nullable<BigInt>,
+        inner_path -> Nullable<Text>,
+        key -> Text,
+        value -> Text,
+        target_item_id -> Nullable<BigInt>,
+        origin -> Text,
+        removed -> Bool,
     }
 }
 
@@ -33,11 +49,22 @@ diesel::table! {
     item (id) {
         id -> BigInt,
         title -> Text,
-        status -> Text,
         note -> Text,
         cover_media -> Nullable<Text>,
         created_at -> BigInt,
         updated_at -> BigInt,
+    }
+}
+
+diesel::table! {
+    item_file (item_id, blob_id) {
+        item_id -> BigInt,
+        blob_id -> BigInt,
+        file_name -> Text,
+        display_name -> Nullable<Text>,
+        added_at -> BigInt,
+        extracted_from_blob_id -> Nullable<BigInt>,
+        extracted_from_path -> Nullable<Text>,
     }
 }
 
@@ -87,35 +114,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    root (id) {
+        id -> BigInt,
+        path -> Text,
+    }
+}
+
+diesel::table! {
     tag (id) {
         id -> BigInt,
         name -> Text,
     }
 }
 
-diesel::table! {
-    version (id) {
-        id -> BigInt,
-        item_id -> BigInt,
-        label -> Nullable<Text>,
-        released_at -> Nullable<BigInt>,
-        added_at -> BigInt,
-    }
-}
-
-diesel::table! {
-    version_file (version_id, blob_id) {
-        version_id -> BigInt,
-        blob_id -> BigInt,
-        file_name -> Text,
-        part -> Nullable<Text>,
-        variant -> Nullable<Text>,
-        role -> Nullable<Text>,
-    }
-}
-
 diesel::joinable!(blob_location -> blob (blob_id));
+diesel::joinable!(blob_location -> root (root_id));
 diesel::joinable!(item -> media (cover_media));
+diesel::joinable!(item_file -> item (item_id));
 diesel::joinable!(item_folder -> folder (folder_id));
 diesel::joinable!(item_folder -> item (item_id));
 diesel::joinable!(item_image -> item (item_id));
@@ -123,21 +138,19 @@ diesel::joinable!(item_image -> media (media_hash));
 diesel::joinable!(item_source -> item (item_id));
 diesel::joinable!(item_tag -> item (item_id));
 diesel::joinable!(item_tag -> tag (tag_id));
-diesel::joinable!(version -> item (item_id));
-diesel::joinable!(version_file -> blob (blob_id));
-diesel::joinable!(version_file -> version (version_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     blob,
     blob_location,
+    facet,
     folder,
     item,
+    item_file,
     item_folder,
     item_image,
     item_source,
     item_tag,
     media,
+    root,
     tag,
-    version,
-    version_file,
 );

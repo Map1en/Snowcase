@@ -83,12 +83,6 @@ action.add_files:
   zh-TW: 新增檔案
   ja: ファイルを追加
   ko: 파일 추가
-action.add_to_library:
-  en: Add to library
-  zh-CN: 加入资产库
-  zh-TW: 加入資產庫
-  ja: ライブラリに追加
-  ko: 라이브러리에 추가
 action.open:
   en: Open
   zh-CN: 打开
@@ -143,18 +137,6 @@ empty.no_results:
   zh-TW: 沒有符合篩選條件的項目
   ja: 条件に一致する項目はありません
   ko: 조건에 맞는 항목이 없습니다
-item.inbox:
-  en: Inbox
-  zh-CN: 待整理
-  zh-TW: 待整理
-  ja: 未整理
-  ko: 정리 대기
-item.in_library:
-  en: In library
-  zh-CN: 已入库
-  zh-TW: 已入庫
-  ja: 登録済み
-  ko: 등록됨
 item.tags:
   en: Tags
   zh-CN: 标签
@@ -179,12 +161,6 @@ item.overview:
   zh-TW: 概覽
   ja: 概要
   ko: 개요
-item.status:
-  en: Status
-  zh-CN: 状态
-  zh-TW: 狀態
-  ja: 状態
-  ko: 상태
 item.name:
   en: Name
   zh-CN: 名称

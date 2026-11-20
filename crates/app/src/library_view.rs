@@ -12,7 +12,7 @@ use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use snowcase_core::library::{Library, Scope, SortKey, Snapshot, collect_files, inspect_file};
-use snowcase_core::{FileKind, ItemChanges, ItemId, ItemStatus, LocationState, StoreError};
+use snowcase_core::{FileKind, ItemId, LocationState, StoreError};
 
 use self::item_table::{ItemRow, ItemTable};
 use crate::i18n::{self, Locale, tr};
@@ -184,7 +184,7 @@ impl LibraryView {
         let rows: Vec<ItemRow> = self
             .rows
             .iter()
-            .filter_map(|id| ItemRow::new(library, *id, cx))
+            .filter_map(|id| ItemRow::new(library, *id))
             .collect();
         self.table.update(cx, |table, cx| {
             table.delegate_mut().rows = rows;
@@ -276,11 +276,7 @@ impl LibraryView {
             .bg(theme.sidebar);
 
         let mut group = filter_group(tr!(cx, "nav.library"), None);
-        for (id, label, scope) in [
-            ("scope-all", tr!(cx, "scope.all"), Scope::All),
-            ("scope-inbox", tr!(cx, "item.inbox"), Scope::Inbox),
-            ("scope-in-library", tr!(cx, "item.in_library"), Scope::InLibrary),
-        ] {
+        for (id, label, scope) in [("scope-all", tr!(cx, "scope.all"), Scope::All)] {
             let count = library.count(&scope);
             group = group.child(self.filter_item(id.into(), label, 0, count, scope, cx));
         }
@@ -541,10 +537,7 @@ impl LibraryView {
                     .gap_1()
                     .text_xs()
                     .text_color(theme.muted_foreground)
-                    .child(format_size(facts.size))
-                    .when(item.status == ItemStatus::Inbox, |this| {
-                        this.child(badge(tr!(cx, "item.inbox"), theme))
-                    }),
+                    .child(format_size(facts.size)),
             )
             .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
                 if event.click_count() >= 2 {
@@ -631,32 +624,10 @@ impl LibraryView {
 
     fn render_overview(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
-        let Some(item) = library.item(id) else {
+        if library.item(id).is_none() {
             return div();
-        };
+        }
         let facts = library.facts(id).cloned().unwrap_or_default();
-
-        let status = if item.status == ItemStatus::Inbox {
-            h_flex().gap_2().items_center().child(badge(tr!(cx, "item.inbox"), theme)).child(
-                Button::new("add-to-library")
-                    .primary()
-                    .compact()
-                    .label(tr!(cx, "action.add_to_library"))
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.change(cx, move |library| {
-                            library.update_item(
-                                id,
-                                &ItemChanges {
-                                    status: Some(ItemStatus::Confirmed),
-                                    ..Default::default()
-                                },
-                            )
-                        });
-                    })),
-            )
-        } else {
-            h_flex().child(badge(tr!(cx, "item.in_library"), theme))
-        };
 
         let tags = h_flex().flex_wrap().gap_1().children(library.tags_of(id).into_iter().map(
             |tag| {
@@ -681,7 +652,6 @@ impl LibraryView {
         v_flex()
             .gap_4()
             .child(thumbnail(facts.kinds.first().copied(), px(160.), theme))
-            .child(status)
             .child(
                 section(tr!(cx, "item.tags"))
                     .child(tags)
@@ -814,7 +784,7 @@ impl Render for LibraryView {
 fn render_files(id: ItemId, library: &Snapshot, cx: &App) -> Div {
     let theme = cx.theme();
     let mut list = section(tr!(cx, "item.files"));
-    for file in library.versions(id).into_iter().flat_map(|version| version.files) {
+    for file in library.files(id) {
         let missing = file
             .locations
             .first()

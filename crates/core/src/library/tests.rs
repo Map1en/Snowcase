@@ -76,7 +76,7 @@ fn collect_files_walks_folders_in_name_order() {
 }
 
 #[test]
-fn import_creates_one_inbox_item_per_new_file_and_persists_it() {
+fn import_creates_one_item_per_new_file_and_persists_it() {
     let (dir, mut library) = sample();
 
     let again = library
@@ -91,17 +91,135 @@ fn import_creates_one_inbox_item_per_new_file_and_persists_it() {
 
     let library = Library::open(dir.path()).unwrap();
     assert_eq!(library.count(&Scope::All), 4);
-    assert_eq!(library.count(&Scope::Inbox), 4);
     let gloves = id_of(&library, "Gloves");
-    let versions = library.versions(gloves);
-    assert_eq!(versions.len(), 1);
-    assert_eq!(versions[0].version.label, None);
-    let files = &versions[0].files;
+    let files = library.files(gloves);
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].file.file_name, "Gloves.unitypackage");
-    assert_eq!(files[0].file.role, Some(FileRole::Package));
-    assert_eq!(files[0].locations[0].path, "D:/BOOTH/Gloves.unitypackage");
+    assert_eq!(files[0].file.extracted_from_blob_id, None);
+    assert_eq!(files[0].blob.kind, BlobKind::UnityPackage);
+    assert_eq!(library.location_path(files[0].locations[0]), "D:/BOOTH/Gloves.unitypackage");
     assert_eq!(files[0].locations[0].state, LocationState::Present);
+}
+
+#[test]
+fn parent_node_climbs_folders_then_containers_then_the_file_and_the_item() {
+    let item = ItemId(1);
+    let at = |path: &str| FacetNode {
+        item_id: item,
+        blob_id: Some(snowcase_store::BlobId(2)),
+        inner_path: Some(path.to_owned()),
+    };
+    let mut node = at("Manuka/Outfit.unitypackage!/Assets/Shop/Black.prefab");
+    let mut chain = Vec::new();
+    while let Some(parent) = parent_node(&node) {
+        chain.push(parent.inner_path.clone().unwrap_or_else(|| {
+            if parent.blob_id.is_some() { "<file>" } else { "<item>" }.to_owned()
+        }));
+        node = parent;
+    }
+
+    assert_eq!(
+        chain,
+        [
+            "Manuka/Outfit.unitypackage!/Assets/Shop",
+            "Manuka/Outfit.unitypackage!/Assets",
+            "Manuka/Outfit.unitypackage",
+            "Manuka",
+            "<file>",
+            "<item>",
+        ]
+    );
+}
+
+fn values(names: &[&str]) -> Vec<FacetValue> {
+    names
+        .iter()
+        .map(|name| FacetValue {
+            value: (*name).to_owned(),
+            target_item_id: None,
+        })
+        .collect()
+}
+
+fn shown(library: &Library, node: &FacetNode, key: FacetKey) -> Vec<(String, FacetOrigin)> {
+    library
+        .facets(node, key)
+        .into_iter()
+        .map(|facet| (facet.value, facet.origin))
+        .collect()
+}
+
+fn outfit() -> (tempfile::TempDir, Library, FacetNode, FacetNode, FacetNode) {
+    let (dir, library) = sample();
+    let gloves = id_of(&library, "Gloves");
+    let blob_id = library.files(gloves)[0].blob.id;
+    let item = item_node(gloves);
+    let file = FacetNode {
+        item_id: gloves,
+        blob_id: Some(blob_id),
+        inner_path: None,
+    };
+    let prefab = FacetNode {
+        inner_path: Some("Gloves.unitypackage!/Assets/Shop/Black.prefab".into()),
+        ..file.clone()
+    };
+    (dir, library, item, file, prefab)
+}
+
+#[test]
+fn facets_inherit_down_the_tree_and_the_nearest_node_wins_as_a_whole() {
+    let (_dir, mut library, item, file, prefab) = outfit();
+    library.set_auto_facets(&item, FacetKey::Target, &values(&["Manuka", "Kikyo"])).unwrap();
+
+    let inherited = library.facets(&prefab, FacetKey::Target);
+    assert_eq!(inherited.len(), 2);
+    assert_eq!(inherited[0].from, item);
+
+    library.set_auto_facets(&file, FacetKey::Target, &values(&["Karin"])).unwrap();
+    assert_eq!(shown(&library, &prefab, FacetKey::Target), [("Karin".into(), FacetOrigin::Auto)]);
+    assert_eq!(library.facets(&prefab, FacetKey::Target)[0].from, file);
+    assert_eq!(shown(&library, &item, FacetKey::Target).len(), 2);
+    assert!(library.facets(&prefab, FacetKey::Color).is_empty());
+}
+
+#[test]
+fn recognising_again_never_overrides_a_user_value() {
+    let (_dir, mut library, item, _file, prefab) = outfit();
+    library.set_auto_facets(&item, FacetKey::Color, &values(&["black"])).unwrap();
+    library.set_user_facets(&item, FacetKey::Color, &values(&["navy"])).unwrap();
+
+    library.set_auto_facets(&item, FacetKey::Color, &values(&["white"])).unwrap();
+
+    assert_eq!(shown(&library, &prefab, FacetKey::Color), [("navy".into(), FacetOrigin::User)]);
+}
+
+#[test]
+fn a_removed_value_does_not_come_back_when_recognising_again() {
+    let (_dir, mut library, item, file, _prefab) = outfit();
+    library.set_auto_facets(&item, FacetKey::Target, &values(&["Manuka", "Kikyo"])).unwrap();
+
+    library.remove_facet(&item, FacetKey::Target, "Manuka").unwrap();
+    library.set_auto_facets(&item, FacetKey::Target, &values(&["Manuka", "Kikyo"])).unwrap();
+
+    assert_eq!(shown(&library, &file, FacetKey::Target), [("Kikyo".into(), FacetOrigin::Auto)]);
+}
+
+#[test]
+fn removing_an_inherited_value_on_a_child_hides_it_only_below_that_child() {
+    let (_dir, mut library, item, file, prefab) = outfit();
+    library.set_auto_facets(&item, FacetKey::Target, &values(&["Manuka", "Kikyo"])).unwrap();
+
+    library.remove_facet(&file, FacetKey::Target, "Manuka").unwrap();
+
+    assert_eq!(shown(&library, &prefab, FacetKey::Target), [("Kikyo".into(), FacetOrigin::Auto)]);
+    assert_eq!(shown(&library, &item, FacetKey::Target).len(), 2);
+}
+
+#[test]
+#[should_panic(expected = "takes a single value")]
+fn a_single_valued_key_rejects_several_values() {
+    let (_dir, mut library, item, _file, _prefab) = outfit();
+    library.set_auto_facets(&item, FacetKey::Color, &values(&["black", "white"])).unwrap();
 }
 
 #[test]
@@ -144,23 +262,12 @@ fn query_combines_scope_with_search_over_titles_tags_and_file_names() {
     let kikyo = library.tag_item(hair, " Kikyo ").unwrap().unwrap();
     let folder = library.create_folder(None, "Avatars").unwrap().unwrap();
     library.put_in_folder(gloves, folder).unwrap();
-    library
-        .update_item(
-            gloves,
-            &ItemChanges {
-                status: Some(ItemStatus::Confirmed),
-                ..Default::default()
-            },
-        )
-        .unwrap();
 
     let query = |scope: Scope, search: &str| titles(&library.query(&scope, search, SortKey::Name));
     assert_eq!(query(Scope::All, " KIKYO "), ["Hair"]);
     assert_eq!(query(Scope::All, ".unitypackage"), ["Gloves"]);
     assert_eq!(query(Scope::Tag(kikyo), ""), ["Hair"]);
     assert_eq!(query(Scope::Folder(folder), ""), ["Gloves"]);
-    assert_eq!(query(Scope::Inbox, ""), ["cover", "Hair"]);
-    assert_eq!(query(Scope::InLibrary, ""), ["Gloves"]);
 }
 
 #[test]
@@ -225,11 +332,15 @@ fn every_write_keeps_the_snapshot_equal_to_a_full_reload() {
         .update_item(
             hair,
             &ItemChanges {
-                status: Some(ItemStatus::Confirmed),
+                title: Some("Long Hair".into()),
                 ..Default::default()
             },
         )
         .unwrap();
+    library
+        .set_auto_facets(&item_node(hair), FacetKey::Target, &values(&["Manuka", "Kikyo"]))
+        .unwrap();
+    library.remove_facet(&item_node(hair), FacetKey::Target, "Kikyo").unwrap();
     library
         .import(vec![
             file("Boots.fbx", 5, FileKind::Model),

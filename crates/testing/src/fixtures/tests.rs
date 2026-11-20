@@ -1,14 +1,14 @@
 use super::*;
 use snowcase_core::library::{ItemFacts, Library, Scope, SortKey};
 
-fn snapshot(fixture: &Fixture) -> Vec<(String, ItemStatus, usize)> {
+fn snapshot(fixture: &Fixture) -> Vec<(String, usize, usize)> {
     let library = &fixture.library;
     library
         .query(&Scope::All, "", SortKey::Name)
         .into_iter()
         .map(|item| {
             let facts = library.facts(item.id).unwrap();
-            (item.title.clone(), item.status, facts.tags.len())
+            (item.title.clone(), facts.file_count, facts.tags.len())
         })
         .collect()
 }
@@ -25,8 +25,6 @@ fn a_seeded_library_covers_the_states_tests_rely_on() {
     let library = &fixture.library;
 
     assert_eq!(library.count(&Scope::All), 120);
-    assert!(library.count(&Scope::Inbox) > 0);
-    assert!(library.count(&Scope::Inbox) < 120);
     assert!(library.items().iter().any(|item| library.tags_of(item.id).is_empty()));
     let tree: Vec<_> = library
         .folder_tree()
@@ -41,7 +39,7 @@ fn a_seeded_library_covers_the_states_tests_rely_on() {
     assert!(!library.tag_counts().is_empty());
 }
 
-type ItemView = (String, ItemStatus, Option<ItemFacts>, Vec<String>, Vec<String>);
+type ItemView = (String, Option<ItemFacts>, Vec<String>, Vec<String>);
 
 fn everything(library: &Library) -> Vec<ItemView> {
     library
@@ -50,7 +48,6 @@ fn everything(library: &Library) -> Vec<ItemView> {
         .map(|item| {
             (
                 item.title.clone(),
-                item.status,
                 library.facts(item.id).cloned(),
                 library.tags_of(item.id).iter().map(|tag| tag.name.clone()).collect(),
                 library.folders_of(item.id).iter().map(|folder| folder.name.clone()).collect(),
