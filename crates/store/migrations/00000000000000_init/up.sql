@@ -46,6 +46,7 @@ CREATE TABLE blob_location (
     blob_id BIGINT NOT NULL REFERENCES blob(id) ON DELETE CASCADE,
     root_id BIGINT REFERENCES root(id),
     rel_path TEXT NOT NULL,
+    modified_ms BIGINT NOT NULL,
     state TEXT NOT NULL,
     last_seen BIGINT NOT NULL
 );

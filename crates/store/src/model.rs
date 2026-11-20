@@ -218,6 +218,7 @@ pub struct BlobLocation {
     pub blob_id: BlobId,
     pub root_id: Option<RootId>,
     pub rel_path: String,
+    pub modified_ms: i64,
     pub state: LocationState,
     pub last_seen: i64,
 }
@@ -242,6 +243,7 @@ pub struct FileImport {
     pub file_name: String,
     pub display_name: Option<String>,
     pub size: i64,
+    pub modified_ms: i64,
     pub fingerprint: String,
     pub crc32: Option<i64>,
     pub kind: BlobKind,

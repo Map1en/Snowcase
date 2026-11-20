@@ -315,6 +315,7 @@ impl Store {
                 Some((location, blob_id, fingerprint)) if fingerprint == file.fingerprint => {
                     diesel::update(blob_location::table.find(location))
                         .set((
+                            blob_location::modified_ms.eq(file.modified_ms),
                             blob_location::state.eq(LocationState::Present),
                             blob_location::last_seen.eq(now),
                         ))
@@ -326,6 +327,7 @@ impl Store {
                     diesel::update(blob_location::table.find(location))
                         .set((
                             blob_location::blob_id.eq(blob_id),
+                            blob_location::modified_ms.eq(file.modified_ms),
                             blob_location::state.eq(LocationState::Present),
                             blob_location::last_seen.eq(now),
                         ))
@@ -339,6 +341,7 @@ impl Store {
                             blob_location::blob_id.eq(blob_id),
                             blob_location::root_id.eq(file.root_id),
                             blob_location::rel_path.eq(&file.rel_path),
+                            blob_location::modified_ms.eq(file.modified_ms),
                             blob_location::state.eq(LocationState::Present),
                             blob_location::last_seen.eq(now),
                         ))

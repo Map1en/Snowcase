@@ -14,6 +14,7 @@ fn import(item_id: ItemId, root_id: Option<RootId>, rel_path: &str, fingerprint:
         file_name: rel_path.rsplit('/').next().unwrap().to_owned(),
         display_name: None,
         size: 10,
+        modified_ms: 1,
         fingerprint: fingerprint.to_owned(),
         crc32: Some(0x1234),
         kind: BlobKind::UnityPackage,

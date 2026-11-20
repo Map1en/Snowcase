@@ -17,6 +17,7 @@ diesel::table! {
         blob_id -> BigInt,
         root_id -> Nullable<BigInt>,
         rel_path -> Text,
+        modified_ms -> BigInt,
         state -> Text,
         last_seen -> BigInt,
     }

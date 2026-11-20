@@ -628,6 +628,7 @@ fn import_file(store: &mut Store, file: FileInfo) -> Result<ItemId, StoreError> 
         file_name: file.name,
         display_name: None,
         size: i64::try_from(file.size).unwrap_or(i64::MAX),
+        modified_ms: file.modified_ms,
         fingerprint: format!("{}:{}", file.size, file.modified_ms),
         crc32: None,
         kind: BlobKind::from(file.kind),

@@ -1,4 +1,5 @@
 pub mod library;
+pub mod scan;
 
 pub use snowcase_formats::FileKind;
 pub use snowcase_store::{

@@ -40,5 +40,15 @@ pub fn detect_kind(extension: Option<&str>, header: &[u8]) -> FileKind {
     FileKind::Other
 }
 
+pub fn guess_kind(extension: Option<&str>) -> FileKind {
+    match extension.map(str::to_ascii_lowercase).as_deref() {
+        Some("unitypackage") => FileKind::UnityPackage,
+        Some("zip" | "7z" | "rar") => FileKind::Archive,
+        Some("png" | "jpg" | "jpeg" | "gif" | "webp" | "psd") => FileKind::Image,
+        Some("fbx" | "obj" | "blend" | "vrm" | "glb" | "gltf") => FileKind::Model,
+        _ => FileKind::Other,
+    }
+}
+
 #[cfg(test)]
 mod tests;

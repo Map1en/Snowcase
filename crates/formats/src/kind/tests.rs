@@ -33,6 +33,17 @@ fn models_cover_binary_and_ascii_fbx() {
 }
 
 #[test]
+fn guess_kind_uses_only_the_extension() {
+    assert_eq!(guess_kind(Some("UnityPackage")), FileKind::UnityPackage);
+    assert_eq!(guess_kind(Some("zip")), FileKind::Archive);
+    assert_eq!(guess_kind(Some("7z")), FileKind::Archive);
+    assert_eq!(guess_kind(Some("PSD")), FileKind::Image);
+    assert_eq!(guess_kind(Some("vrm")), FileKind::Model);
+    assert_eq!(guess_kind(Some("exe")), FileKind::Other);
+    assert_eq!(guess_kind(None), FileKind::Other);
+}
+
+#[test]
 fn short_or_empty_headers_fall_back_to_other() {
     assert_eq!(detect_kind(None, &[]), FileKind::Other);
     assert_eq!(detect_kind(Some("txt"), b"R"), FileKind::Other);
