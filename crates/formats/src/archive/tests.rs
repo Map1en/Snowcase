@@ -162,3 +162,61 @@ fn macos_metadata_is_junk_but_ordinary_names_are_not() {
     assert!(!is_junk("MACOSX_theme/readme.txt"));
     assert!(!is_junk("Outfit/Outfit.unitypackage"));
 }
+
+fn build_7z(files: &[(&str, &[u8])], directories: &[&str]) -> Vec<u8> {
+    use sevenz_rust2::{ArchiveEntry as SevenEntry, ArchiveWriter};
+    let mut writer = ArchiveWriter::new(Cursor::new(Vec::new())).unwrap();
+    for name in directories {
+        writer
+            .push_archive_entry::<&[u8]>(SevenEntry::new_directory(name), None)
+            .unwrap();
+    }
+    for (name, data) in files {
+        writer
+            .push_archive_entry(SevenEntry::new_file(name), Some(*data))
+            .unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+#[test]
+fn lists_7z_files_with_size_and_crc_and_skips_directories() {
+    let bytes = build_7z(
+        &[
+            ("mafuyu-meeting/MafuyuMini_ver1.012.unitypackage", b"package!"),
+            ("mafuyu-meeting\\読んでね.txt", b"readme"),
+        ],
+        &["mafuyu-meeting"],
+    );
+
+    let entries = list_7z(Cursor::new(bytes)).unwrap();
+
+    let summary: Vec<_> = entries
+        .iter()
+        .map(|entry| (entry.path.as_str(), entry.size, entry.crc32))
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            ("mafuyu-meeting/MafuyuMini_ver1.012.unitypackage", 8, crc32(b"package!")),
+            ("mafuyu-meeting/読んでね.txt", 6, crc32(b"readme")),
+        ]
+    );
+}
+
+#[test]
+fn a_file_that_is_not_a_7z_fails_with_an_error() {
+    assert!(list_7z(Cursor::new(build_zip(&[member("a.txt", b"a", 1)]))).is_err());
+    assert!(list_7z(Cursor::new(Vec::new())).is_err());
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    let mut crc = !0u32;
+    for byte in data {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            crc = if crc & 1 == 1 { (crc >> 1) ^ 0xedb8_8320 } else { crc >> 1 };
+        }
+    }
+    !crc
+}

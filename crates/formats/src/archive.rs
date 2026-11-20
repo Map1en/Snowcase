@@ -1,8 +1,8 @@
 use std::io::{Read, Seek};
 
 use encoding_rs::SHIFT_JIS;
+use sevenz_rust2::{Archive, Password};
 use zip::ZipArchive;
-use zip::result::ZipError;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveEntry {
@@ -12,8 +12,12 @@ pub struct ArchiveEntry {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("failed to read the zip directory: {0}")]
-pub struct ArchiveError(#[from] ZipError);
+pub enum ArchiveError {
+    #[error("failed to read the zip directory: {0}")]
+    Zip(#[from] zip::result::ZipError),
+    #[error("failed to read the 7z directory: {0}")]
+    SevenZip(#[from] sevenz_rust2::Error),
+}
 
 pub fn list_zip(reader: impl Read + Seek) -> Result<Vec<ArchiveEntry>, ArchiveError> {
     let archive = ZipArchive::new(reader)?;
@@ -30,6 +34,20 @@ pub fn list_zip(reader: impl Read + Seek) -> Result<Vec<ArchiveEntry>, ArchiveEr
         });
     }
     Ok(entries)
+}
+
+pub fn list_7z(mut reader: impl Read + Seek) -> Result<Vec<ArchiveEntry>, ArchiveError> {
+    let archive = Archive::read(&mut reader, &Password::empty())?;
+    Ok(archive
+        .files
+        .into_iter()
+        .filter(|entry| !entry.is_directory)
+        .map(|entry| ArchiveEntry {
+            path: entry.name.replace('\\', "/"),
+            size: entry.size,
+            crc32: entry.crc as u32,
+        })
+        .collect())
 }
 
 fn decode_name(raw: &[u8]) -> String {
