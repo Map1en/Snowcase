@@ -9,6 +9,9 @@ repository.workspace = true
 snowcase-formats = { workspace = true }
 snowcase-store = { workspace = true }
 thiserror = { workspace = true }
+encoding_rs = { workspace = true }
+regex = { workspace = true }
+unicode-normalization = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
