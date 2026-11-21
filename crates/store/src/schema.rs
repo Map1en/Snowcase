@@ -3,7 +3,6 @@
 diesel::table! {
     blob (id) {
         id -> BigInt,
-        hash -> Nullable<Text>,
         size -> BigInt,
         fingerprint -> Nullable<Text>,
         crc32 -> Nullable<BigInt>,

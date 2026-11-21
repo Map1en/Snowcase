@@ -34,7 +34,6 @@ CREATE TABLE root (
 
 CREATE TABLE blob (
     id INTEGER PRIMARY KEY NOT NULL,
-    hash TEXT UNIQUE,
     size BIGINT NOT NULL,
     fingerprint TEXT,
     crc32 BIGINT,

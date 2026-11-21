@@ -104,7 +104,6 @@ text_enum!(StoreKind {
 text_enum!(LocationState {
     Present => "present",
     Missing => "missing",
-    Archived => "archived",
 });
 
 text_enum!(ImageOrigin {
@@ -206,7 +205,6 @@ pub struct Root {
 #[diesel(table_name = blob, check_for_backend(Sqlite))]
 pub struct Blob {
     pub id: BlobId,
-    pub hash: Option<String>,
     pub size: i64,
     pub fingerprint: Option<String>,
     pub crc32: Option<i64>,
