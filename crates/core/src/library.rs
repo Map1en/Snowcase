@@ -124,6 +124,7 @@ impl Filter {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Hit {
     File(String),
+    Package { file: String, package: String, path: String },
     Tag { name: String, file: Option<String> },
     Attribute(String),
 }
@@ -230,6 +231,7 @@ pub struct PackageSummary {
     pub root: Option<String>,
     pub shop: Option<String>,
     pub error: Option<String>,
+    pub paths: Vec<String>,
 }
 
 const SHOP_SHARE: f64 = 0.6;
@@ -277,6 +279,7 @@ impl PackageSummary {
                         .map(|(root, _)| root),
                     shop: shop_of(&files),
                     error: None,
+                    paths: files.iter().map(|path| (*path).to_owned()).collect(),
                 }
             }
         }
@@ -287,7 +290,7 @@ impl PackageSummary {
 pub struct Snapshot {
     catalog: Catalog,
     facts: HashMap<ItemId, ItemFacts>,
-    packages: HashMap<PackageKey, PackageSummary>,
+    packages: Arc<HashMap<PackageKey, Arc<PackageSummary>>>,
 }
 
 pub struct Library {
@@ -307,11 +310,13 @@ impl Library {
         }
         let mut cache = Cache::open(dir)?;
         let mut snapshot = Snapshot::new(catalog);
-        snapshot.packages = cache
-            .load_packages()?
-            .iter()
-            .map(|scanned| (scanned.key.clone(), PackageSummary::of(scanned)))
-            .collect();
+        snapshot.packages = Arc::new(
+            cache
+                .load_packages()?
+                .iter()
+                .map(|scanned| (scanned.key.clone(), Arc::new(PackageSummary::of(scanned))))
+                .collect(),
+        );
         Ok(Self {
             store,
             cache,
@@ -468,7 +473,7 @@ impl Snapshot {
         Self {
             catalog,
             facts,
-            packages: HashMap::new(),
+            packages: Arc::default(),
         }
     }
 
@@ -493,6 +498,7 @@ impl Snapshot {
             let (archive, member) = (file.extracted_from_blob_id?, file.extracted_from_path.as_deref()?);
             self.packages.get(&self.package_key(archive, member)?)
         })
+        .map(Arc::as_ref)
     }
 
     fn package_roots(&self, id: ItemId) -> HashSet<&str> {
@@ -552,7 +558,7 @@ impl Snapshot {
             .packages
             .iter()
             .filter(|(key, _)| key.fingerprint == fingerprint && !key.member.is_empty())
-            .map(|(key, summary)| (key.member.as_str(), summary))
+            .map(|(key, summary)| (key.member.as_str(), summary.as_ref()))
             .collect();
         found.sort_by_key(|(member, _)| *member);
         found
@@ -676,8 +682,31 @@ impl Snapshot {
                     file,
                 })
             });
+        let packaged = || {
+            self.catalog.files.iter().filter(|file| file.item_id == id).find_map(|file| {
+                let own = self.package_of(file).map(|summary| (shown_name(file), summary));
+                let inside = self
+                    .packages_in(file.blob_id)
+                    .into_iter()
+                    .map(|(member, summary)| (member.rsplit('/').next().unwrap_or(member), summary));
+                own.into_iter().chain(inside).find_map(|(package, summary)| {
+                    let mut matching = summary.paths.iter().filter(|path| found(path));
+                    let first = matching.next()?;
+                    let path = std::iter::once(first)
+                        .chain(matching)
+                        .find(|path| path.to_lowercase().ends_with(".prefab"))
+                        .unwrap_or(first);
+                    Some(Hit::Package {
+                        file: shown_name(file).to_owned(),
+                        package: package.to_owned(),
+                        path: path.clone(),
+                    })
+                })
+            })
+        };
         tagged
             .or_else(|| facts.file_names.iter().find(|name| found(name)).cloned().map(Hit::File))
+            .or_else(packaged)
             .or_else(|| {
                 facts
                     .attributes

@@ -389,3 +389,9 @@ status.scanning:
   zh-TW: 正在掃描庫資料夾…
   ja: ライブラリフォルダーをスキャン中…
   ko: 라이브러리 폴더 스캔 중…
+hit.package:
+  en: "Match: %{name} (in %{package})"
+  zh-CN: 命中：%{name}（在 %{package} 里）
+  zh-TW: 命中：%{name}（在 %{package} 裡）
+  ja: 一致：%{name}（%{package} 内）
+  ko: "일치: %{name} (%{package} 안)"

@@ -222,8 +222,9 @@ impl Library {
         })?;
         self.cache.save_packages(&packages)?;
         let snapshot = Arc::make_mut(&mut self.snapshot);
+        let summaries = Arc::make_mut(&mut snapshot.packages);
         for scanned in &packages {
-            snapshot.packages.insert(scanned.key.clone(), PackageSummary::of(scanned));
+            summaries.insert(scanned.key.clone(), Arc::new(PackageSummary::of(scanned)));
         }
         let mut touched: Vec<ItemId> = touched.into_iter().collect();
         touched.sort();

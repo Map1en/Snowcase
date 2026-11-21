@@ -310,3 +310,18 @@ fn unsupported_archives_are_counted_in_the_status_bar(cx: &mut TestAppContext) {
         assert_eq!(view.unsupported, [assets.path().join("TENSHI_CHOKER.rar").to_string_lossy()]);
     });
 }
+
+#[gpui_kit::test]
+fn searching_a_part_finds_the_item_whose_package_holds_it(cx: &mut TestAppContext) {
+    let (Fixture { library, dir: _dir }, assets) = fixtures::scanned(2);
+    let bikini = fixtures::unitypackage(&["Assets/Shop/Bikini/Bikini_Top.prefab", "Assets/Shop/Bikini/Tights_Black.prefab"]);
+    std::fs::write(assets.path().join("Plumery_Bikini.unitypackage"), bikini).unwrap();
+    let (window, view) = open_library(library, cx);
+    assert_eq!(count(window, "asset", cx), 3);
+
+    type_into(window, "search", "Tights", cx);
+
+    assert_eq!(count(window, "asset", cx), 1);
+    assert!(exists(window, ("hit", 0usize), cx));
+    read(&view, cx, |view, library| assert_eq!(library.item(view.rows[0]).unwrap().title, "Plumery_Bikini"));
+}

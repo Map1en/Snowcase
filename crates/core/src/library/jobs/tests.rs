@@ -279,3 +279,40 @@ fn items_installing_the_same_package_root_are_offered_for_merging_unless_their_v
     assert_eq!(ribbons.len(), 2);
     assert!(library.merge_candidates(ribbons[0]).is_empty());
 }
+
+#[test]
+fn searching_finds_a_part_inside_a_package_and_says_where_it_is() {
+    let data = tempfile::tempdir().unwrap();
+    let assets = tempfile::tempdir().unwrap();
+    let bikini = unitypackage(&[
+        "Assets/Shop/Bikini/Bikini_Top.prefab",
+        "Assets/Shop/Bikini/Anim/Tights_ON.anim",
+        "Assets/Shop/Bikini/Tights_Black.prefab",
+    ]);
+    write_zip(assets.path(), "Plumery_Bikini.zip", &[("Plumery/Bikini.unitypackage", &bikini)]);
+    write(assets.path(), "Hair.unitypackage", &unitypackage(&["Assets/Shop/Hair/Hair.prefab"]));
+    let mut library = Library::open(data.path()).unwrap();
+    library.scan_root(assets.path(), CodePage::Other).unwrap();
+    run_all(&mut library);
+
+    let found = library.query(&crate::library::Filter::search("tights"), crate::library::SortKey::Name);
+
+    assert_eq!(found.iter().map(|item| item.title.as_str()).collect::<Vec<_>>(), ["Plumery_Bikini"]);
+    assert_eq!(
+        library.hit(found[0].id, "tights"),
+        Some(crate::library::Hit::Package {
+            file: "Plumery_Bikini.zip".into(),
+            package: "Bikini.unitypackage".into(),
+            path: "Assets/Shop/Bikini/Tights_Black.prefab".into(),
+        })
+    );
+    let hair = library.items().iter().find(|item| item.title == "Hair").unwrap().id;
+    assert_eq!(
+        library.hit(hair, "hair.prefab"),
+        Some(crate::library::Hit::Package {
+            file: "Hair.unitypackage".into(),
+            package: "Hair.unitypackage".into(),
+            path: "Assets/Shop/Hair/Hair.prefab".into(),
+        })
+    );
+}

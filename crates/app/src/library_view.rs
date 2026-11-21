@@ -962,6 +962,7 @@ impl LibraryView {
         let theme = cx.theme();
         let hit_file = match library.hit(id, &self.filter.search) {
             Some(Hit::File(name)) => Some(name),
+            Some(Hit::Package { file, .. }) => Some(file),
             Some(Hit::Tag { file, .. }) => file,
             _ => None,
         };
@@ -1133,6 +1134,9 @@ fn package_label(member: Option<&str>, summary: &PackageSummary, cx: &App) -> St
 fn hit_label(hit: &Hit, cx: &App) -> SharedString {
     match hit {
         Hit::File(name) | Hit::Attribute(name) => tr!(cx, "hit.match", name = name),
+        Hit::Package { package, path, .. } => {
+            tr!(cx, "hit.package", name = path.rsplit('/').next().unwrap_or(path), package = package)
+        }
         Hit::Tag { name, file: None } => tr!(cx, "hit.tag", name = name),
         Hit::Tag { name, file: Some(file) } => tr!(cx, "hit.tag_in", name = name, file = file),
     }
