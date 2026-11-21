@@ -1,6 +1,8 @@
 use fake::Fake;
 use fake::faker::lorem::en::Word;
 use fake::faker::name::ja_jp::FirstName;
+use flate2::Compression;
+use flate2::write::GzEncoder;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use snowcase_core::FileKind;
@@ -36,10 +38,31 @@ pub fn asset_dir() -> tempfile::TempDir {
     dir
 }
 
+pub fn unitypackage(paths: &[&str]) -> Vec<u8> {
+    let mut builder = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::fast()));
+    for (n, path) in paths.iter().enumerate() {
+        let guid = format!("{n:032x}");
+        for (name, data) in [("pathname", path.as_bytes()), ("asset", b"data".as_slice())] {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(data.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, format!("{guid}/{name}"), data)
+                .expect("add a package member");
+        }
+    }
+    builder
+        .into_inner()
+        .and_then(|encoder| encoder.finish())
+        .expect("finish the package")
+}
+
 pub fn packages(count: usize) -> tempfile::TempDir {
     let assets = tempfile::tempdir().expect("create asset directory");
     for n in 0..count {
-        std::fs::write(assets.path().join(format!("Outfit{n:02}.unitypackage")), [0x1f, 0x8b, n as u8])
+        let prefab = format!("Assets/Shop/Outfit{n:02}/Outfit{n:02}.prefab");
+        std::fs::write(assets.path().join(format!("Outfit{n:02}.unitypackage")), unitypackage(&[&prefab]))
             .expect("write package");
     }
     assets

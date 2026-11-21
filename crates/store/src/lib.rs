@@ -1,3 +1,4 @@
+mod cache;
 mod model;
 mod schema;
 
@@ -14,6 +15,7 @@ use diesel::sql_types::Text;
 use diesel::sqlite::{Sqlite, SqliteConnection};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 
+pub use cache::{Cache, PackageKey, ScannedPackage};
 pub use model::*;
 use schema::*;
 

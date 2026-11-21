@@ -56,6 +56,8 @@ fn adding_a_library_folder_scans_it_and_lists_it_on_the_left(cx: &mut TestAppCon
         let fingerprinted = library.files(library.items()[0].id)[0].blob.fingerprint.is_some();
         assert!(fingerprinted, "adding a folder starts the background work");
     });
+    click(window, ("asset", 0usize), cx);
+    assert!(exists(window, ("package", 0usize), cx), "the package was read in the background");
 }
 
 #[gpui_kit::test]
@@ -224,4 +226,17 @@ fn switching_language_relabels_the_inputs(cx: &mut TestAppContext) {
 
     assert!(exists(window, "filters", cx));
     view.read_with(cx, |view, cx| assert_eq!(placeholder(view, cx), "タイトル・タグ・ファイルを検索"));
+}
+
+#[gpui_kit::test]
+fn the_top_bar_stays_one_row_so_nothing_covers_the_sidebar_or_the_cards(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::library(3, 10);
+    let (window, view) = open_library(library, cx);
+
+    click(window, "scope-folder-2", cx);
+    click(window, "scope-all", cx);
+    click(window, ("asset", 0usize), cx);
+
+    assert!(exists(window, "detail", cx));
+    view.read_with(cx, |view, _| assert_eq!(view.filter.scope, Scope::All));
 }

@@ -353,3 +353,15 @@ action.cancel:
   zh-TW: 取消
   ja: キャンセル
   ko: 취소
+package.files:
+  en: "%{count} assets"
+  zh-CN: "%{count} 个资源"
+  zh-TW: "%{count} 個資源"
+  ja: "%{count} 個のアセット"
+  ko: "에셋 %{count}개"
+package.failed:
+  en: Couldn't read this package
+  zh-CN: 读不了这个包
+  zh-TW: 讀不了這個包
+  ja: このパッケージは読み取れません
+  ko: 이 패키지를 읽을 수 없습니다

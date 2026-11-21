@@ -12,8 +12,8 @@ use crate::names::tag_key;
 use crate::scan::ArchiveCache;
 use snowcase_store::{
     Blob, BlobId, BlobKind, BlobLocation, Catalog, Facet, FacetKey, FacetNode, FacetOrigin, FacetValue,
-    FileImport, Folder, FolderId, Item, ItemChanges, ItemFile, ItemId, Root, RootId, Store,
-    StoreError, Tag, TagId,
+    Cache, FileImport, Folder, FolderId, Item, ItemChanges, ItemFile, ItemId, PackageKey, Root, RootId,
+    ScannedPackage, Store, StoreError, Tag, TagId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -224,14 +224,53 @@ pub struct FolderRow<'a> {
     pub count: usize,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PackageSummary {
+    pub files: usize,
+    pub root: Option<String>,
+    pub error: Option<String>,
+}
+
+impl PackageSummary {
+    fn of(scanned: &ScannedPackage) -> Self {
+        match &scanned.result {
+            Err(error) => Self {
+                error: Some(error.clone()),
+                ..Self::default()
+            },
+            Ok(assets) => {
+                let files: Vec<&str> = assets.iter().filter(|asset| asset.is_file).map(|asset| asset.path.as_str()).collect();
+                let mut roots: HashMap<String, usize> = HashMap::new();
+                for path in &files {
+                    let depth = if path.starts_with("Packages/") { 2 } else { 3 };
+                    let parts: Vec<&str> = path.split('/').collect();
+                    if parts.len() > depth {
+                        *roots.entry(parts[..depth].join("/")).or_default() += 1;
+                    }
+                }
+                Self {
+                    files: files.len(),
+                    root: roots
+                        .into_iter()
+                        .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(&a.0)))
+                        .map(|(root, _)| root),
+                    error: None,
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Snapshot {
     catalog: Catalog,
     facts: HashMap<ItemId, ItemFacts>,
+    packages: HashMap<PackageKey, PackageSummary>,
 }
 
 pub struct Library {
     store: Store,
+    cache: Cache,
     snapshot: Arc<Snapshot>,
     archives: ArchiveCache,
 }
@@ -244,9 +283,17 @@ impl Library {
             store.create_folder(None, DEFAULT_FOLDER)?;
             catalog = store.load()?;
         }
+        let mut cache = Cache::open(dir)?;
+        let mut snapshot = Snapshot::new(catalog);
+        snapshot.packages = cache
+            .load_packages()?
+            .iter()
+            .map(|scanned| (scanned.key.clone(), PackageSummary::of(scanned)))
+            .collect();
         Ok(Self {
             store,
-            snapshot: Arc::new(Snapshot::new(catalog)),
+            cache,
+            snapshot: Arc::new(snapshot),
             archives: ArchiveCache::default(),
         })
     }
@@ -388,7 +435,48 @@ impl Library {
 impl Snapshot {
     fn new(catalog: Catalog) -> Self {
         let facts = facts_of(&catalog, |_| true);
-        Self { catalog, facts }
+        Self {
+            catalog,
+            facts,
+            packages: HashMap::new(),
+        }
+    }
+
+    fn fingerprint(&self, blob: BlobId) -> Option<&str> {
+        self.catalog
+            .blobs
+            .iter()
+            .find(|candidate| candidate.id == blob)
+            .and_then(|blob| blob.fingerprint.as_deref())
+    }
+
+    fn package_key(&self, blob: BlobId, member: &str) -> Option<PackageKey> {
+        Some(PackageKey {
+            fingerprint: self.fingerprint(blob)?.to_owned(),
+            member: member.to_owned(),
+        })
+    }
+
+    pub fn package_of(&self, file: &ItemFile) -> Option<&PackageSummary> {
+        let own = self.package_key(file.blob_id, "").and_then(|key| self.packages.get(&key));
+        own.or_else(|| {
+            let (archive, member) = (file.extracted_from_blob_id?, file.extracted_from_path.as_deref()?);
+            self.packages.get(&self.package_key(archive, member)?)
+        })
+    }
+
+    pub fn packages_in(&self, blob: BlobId) -> Vec<(&str, &PackageSummary)> {
+        let Some(fingerprint) = self.fingerprint(blob) else {
+            return Vec::new();
+        };
+        let mut found: Vec<(&str, &PackageSummary)> = self
+            .packages
+            .iter()
+            .filter(|(key, _)| key.fingerprint == fingerprint && !key.member.is_empty())
+            .map(|(key, summary)| (key.member.as_str(), summary))
+            .collect();
+        found.sort_by_key(|(member, _)| *member);
+        found
     }
 
     fn apply_items(&mut self, ids: &[ItemId], rows: Catalog) {

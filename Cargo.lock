@@ -1895,6 +1895,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "filetime"
+version = "0.2.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1255e7a9f1902190d4c10a75f2f7f495d3d3ce13e9ba26e6c48683a0f4dbed7"
+dependencies = [
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6859,9 +6869,11 @@ version = "0.1.0"
 dependencies = [
  "crc32fast",
  "encoding_rs",
+ "flate2",
  "regex",
  "snowcase-formats",
  "snowcase-store",
+ "tar",
  "tempfile",
  "thiserror 2.0.21",
  "unicode-normalization",
@@ -6875,7 +6887,9 @@ dependencies = [
  "blake3",
  "crc32fast",
  "encoding_rs",
+ "flate2",
  "sevenz-rust2",
+ "tar",
  "thiserror 2.0.21",
  "zip",
 ]
@@ -6897,9 +6911,11 @@ name = "snowcase-testing"
 version = "0.1.0"
 dependencies = [
  "fake",
+ "flate2",
  "gpui-kit",
  "rand 0.10.3",
  "snowcase-core",
+ "tar",
  "tempfile",
 ]
 
@@ -7185,6 +7201,16 @@ dependencies = [
  "core-foundation-sys",
  "libc",
  "objc",
+]
+
+[[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
 ]
 
 [[package]]
@@ -9459,6 +9485,7 @@ checksum = "a9534624d547e3f516ecde0ed9a70d37788f01d340efcfdd03bf3ea8e163c1d0"
 dependencies = [
  "constant_time_eq 0.6.1",
  "crc32fast",
+ "flate2",
  "getrandom 0.4.3",
  "indexmap",
  "libc",

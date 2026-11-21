@@ -4,6 +4,8 @@ use encoding_rs::SHIFT_JIS;
 use sevenz_rust2::{Archive, Password};
 use zip::ZipArchive;
 
+use crate::package::{PackageAsset, list_unitypackage};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArchiveEntry {
     pub path: String,
@@ -48,6 +50,17 @@ pub fn list_7z(mut reader: impl Read + Seek) -> Result<Vec<ArchiveEntry>, Archiv
             crc32: entry.crc as u32,
         })
         .collect())
+}
+
+pub fn list_zipped_unitypackage(reader: impl Read + Seek, member: &str) -> std::io::Result<Vec<PackageAsset>> {
+    let mut archive = ZipArchive::new(reader).map_err(std::io::Error::other)?;
+    for index in 0..archive.len() {
+        let entry = archive.by_index(index).map_err(std::io::Error::other)?;
+        if decode_name(entry.name_raw()).replace('\\', "/") == member {
+            return list_unitypackage(entry);
+        }
+    }
+    Err(std::io::Error::new(std::io::ErrorKind::NotFound, format!("{member} is not in the archive")))
 }
 
 fn decode_name(raw: &[u8]) -> String {

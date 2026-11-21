@@ -8,8 +8,8 @@ use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use snowcase_core::library::{
-    Filter, Hit, Library, Scope, Snapshot, SortKey, collect_files, inspect_file, item_node,
-    shown_name,
+    Filter, Hit, Library, PackageSummary, Scope, Snapshot, SortKey, collect_files, inspect_file,
+    item_node, shown_name,
 };
 use snowcase_core::names::CodePage;
 use snowcase_core::{FacetKey, FileKind, ItemId, LocationState, StoreError};
@@ -372,12 +372,10 @@ impl LibraryView {
                 .iter()
                 .find(|(candidate, _)| *candidate == field)
                 .map(|(_, state)| {
-                    Select::new(state)
-                        .id(id)
-                        .placeholder(label)
-                        .cleanable(true)
-                        .small()
+                    div()
                         .w(px(150.))
+                        .flex_shrink_0()
+                        .child(Select::new(state).id(id).placeholder(label).cleanable(true).small())
                 })
         };
         let main = h_flex()
@@ -927,6 +925,7 @@ impl LibraryView {
             _ => None,
         };
         let mut list = section(tr!(cx, "item.files"));
+        let mut package_rows = 0usize;
         for (ix, file) in library.files(id).into_iter().enumerate() {
             let name = shown_name(file.file).to_owned();
             let present = file
@@ -971,6 +970,25 @@ impl LibraryView {
                             .on_click(move |_, _, cx| cx.reveal_path(Path::new(&path)))
                     })),
             );
+            let packages = library
+                .package_of(file.file)
+                .map(|summary| (None, summary))
+                .into_iter()
+                .chain(library.packages_in(file.blob.id).into_iter().map(|(member, summary)| (Some(member), summary)));
+            for (member, summary) in packages {
+                let text = package_label(member, summary, cx);
+                list = list.child(
+                    div()
+                        .id(("package", package_rows))
+                        .test_support()
+                        .pl_4()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .truncate()
+                        .child(text),
+                );
+                package_rows += 1;
+            }
         }
         let hints = library.hints(id);
         if hints.extracted > 0 {
@@ -1035,6 +1053,21 @@ fn folder_name(path: &str) -> String {
     Path::new(path)
         .file_name()
         .map_or_else(|| path.to_owned(), |name| name.to_string_lossy().into_owned())
+}
+
+fn package_label(member: Option<&str>, summary: &PackageSummary, cx: &App) -> String {
+    let mut parts: Vec<String> = member
+        .map(|member| member.rsplit('/').next().unwrap_or(member).to_owned())
+        .into_iter()
+        .collect();
+    match (&summary.error, &summary.root) {
+        (Some(_), _) => parts.push(tr!(cx, "package.failed").to_string()),
+        (None, root) => {
+            parts.push(tr!(cx, "package.files", count = summary.files).to_string());
+            parts.extend(root.clone());
+        }
+    }
+    format!("└ {}", parts.join(" · "))
 }
 
 fn hit_label(hit: &Hit, cx: &App) -> SharedString {

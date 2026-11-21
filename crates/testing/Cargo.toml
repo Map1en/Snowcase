@@ -11,4 +11,6 @@ snowcase-core = { workspace = true }
 fake = { workspace = true }
 rand = { workspace = true }
 tempfile = { workspace = true }
+flate2 = { workspace = true }
+tar = { workspace = true }
 gpui-kit = { workspace = true, features = ["test-support"] }
