@@ -12,9 +12,13 @@ use crate::names::tag_key;
 use crate::scan::ArchiveCache;
 use snowcase_store::{
     Blob, BlobId, BlobKind, BlobLocation, Catalog, Facet, FacetKey, FacetNode, FacetOrigin, FacetValue,
-    Cache, FileImport, Folder, FolderId, Item, ItemChanges, ItemFile, ItemId, PackageKey, Root, RootId,
-    ScannedPackage, Store, StoreError, Tag, TagId,
+    Cache, FileImport, Folder, FolderId, ImageOrigin, Item, ItemChanges, ItemFile, ItemId, Media, PackageKey,
+    Root, RootId, ScannedPackage, Store, StoreError, StoreKind, Tag, TagId,
 };
+
+use crate::booth::{BoothItem, Picture};
+
+const MEDIA: &str = "media";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FileInfo {
@@ -291,6 +295,7 @@ pub struct Snapshot {
     catalog: Catalog,
     facts: HashMap<ItemId, ItemFacts>,
     packages: Arc<HashMap<PackageKey, Arc<PackageSummary>>>,
+    media_dir: PathBuf,
 }
 
 pub struct Library {
@@ -310,6 +315,7 @@ impl Library {
         }
         let mut cache = Cache::open(dir)?;
         let mut snapshot = Snapshot::new(catalog);
+        snapshot.media_dir = dir.join(MEDIA);
         snapshot.packages = Arc::new(
             cache
                 .load_packages()?
@@ -400,6 +406,46 @@ impl Library {
         self.refresh_items(&[id])
     }
 
+    pub fn link_booth(&mut self, id: ItemId, booth: &BoothItem, picture: Option<&Picture>) -> Result<(), StoreError> {
+        let media = match picture {
+            Some(picture) => {
+                let hash = blake3::hash(&picture.bytes).to_hex().to_string();
+                let path = media_path(&self.snapshot.media_dir, &hash, &picture.mime);
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                if !path.exists() {
+                    std::fs::write(&path, &picture.bytes)?;
+                }
+                Some(Media {
+                    hash,
+                    mime: picture.mime.clone(),
+                    width: None,
+                    height: None,
+                    bytes: i64::try_from(picture.bytes.len()).unwrap_or(i64::MAX),
+                })
+            }
+            None => None,
+        };
+        self.store.transaction(|store| {
+            store.update_item(
+                id,
+                &ItemChanges {
+                    title: Some(booth.name.clone()),
+                    note: None,
+                },
+            )?;
+            store.set_store_source(id, StoreKind::Booth, &booth.url, &booth.id.to_string(), &booth.shop)?;
+            if let Some(media) = &media {
+                store.set_cover(id, media, ImageOrigin::Store)?;
+            }
+            Ok(())
+        })?;
+        let media = self.store.load_media()?;
+        Arc::make_mut(&mut self.snapshot).catalog.media = media;
+        self.refresh_items(&[id])
+    }
+
     pub fn remove_root(&mut self, root: RootId) -> Result<(), StoreError> {
         let affected = self.items_in_root(root);
         self.store.remove_root(root)?;
@@ -482,7 +528,22 @@ impl Snapshot {
             catalog,
             facts,
             packages: Arc::default(),
+            media_dir: PathBuf::new(),
         }
+    }
+
+    pub fn cover_path(&self, id: ItemId) -> Option<PathBuf> {
+        let hash = self.item(id)?.cover_media.as_deref()?;
+        let media = self.catalog.media.iter().find(|media| media.hash == hash)?;
+        Some(media_path(&self.media_dir, hash, &media.mime))
+    }
+
+    pub fn booth_url(&self, id: ItemId) -> Option<&str> {
+        self.catalog
+            .sources
+            .iter()
+            .find(|source| source.item_id == id && source.store == StoreKind::Booth)
+            .and_then(|source| source.url.as_deref())
     }
 
     fn fingerprint(&self, blob: BlobId) -> Option<&str> {
@@ -1095,6 +1156,16 @@ fn tally(values: impl Iterator<Item = String>) -> Vec<(String, usize)> {
     let mut counts: Vec<_> = counts.into_iter().collect();
     counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     counts
+}
+
+fn media_path(dir: &Path, hash: &str, mime: &str) -> PathBuf {
+    let extension = match mime {
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => "jpg",
+    };
+    dir.join(&hash[..2]).join(format!("{hash}.{extension}"))
 }
 
 pub fn shown_name(file: &ItemFile) -> &str {

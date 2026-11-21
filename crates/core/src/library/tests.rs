@@ -482,3 +482,32 @@ fn merging_moves_files_tags_folders_and_user_values_and_drops_the_other_item() {
     assert_eq!(values(FacetKey::Shop), ["Shop"], "the other item's automatic values are dropped");
     assert_matches_a_full_reload(&library, dir.path());
 }
+
+#[test]
+fn linking_a_booth_page_sets_title_shop_link_and_a_stored_cover() {
+    let (dir, mut library) = sample();
+    let gloves = id_of(&library, "Gloves");
+    let booth = crate::booth::BoothItem {
+        id: 7,
+        name: "Sample Gloves".into(),
+        shop: "Sample Shop".into(),
+        url: "https://shop.booth.pm/items/7".into(),
+        image: Some("https://booth.pximg.net/a/1.jpg".into()),
+    };
+    let picture = crate::booth::Picture {
+        bytes: b"jpeg bytes".to_vec(),
+        mime: "image/jpeg".into(),
+    };
+
+    library.link_booth(gloves, &booth, Some(&picture)).unwrap();
+    library.link_booth(gloves, &booth, Some(&picture)).unwrap();
+
+    assert_eq!(library.item(gloves).unwrap().title, "Sample Gloves");
+    assert_eq!(library.facts(gloves).unwrap().shop.as_deref(), Some("Sample Shop"));
+    assert_eq!(library.booth_url(gloves), Some("https://shop.booth.pm/items/7"));
+    assert_eq!(library.snapshot().catalog.sources.len(), 1, "linking again replaces the link");
+    let cover = library.cover_path(gloves).unwrap();
+    assert!(cover.starts_with(dir.path().join("media")));
+    assert_eq!(std::fs::read(&cover).unwrap(), b"jpeg bytes");
+    assert_matches_a_full_reload(&library, dir.path());
+}

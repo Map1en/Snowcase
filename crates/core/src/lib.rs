@@ -1,3 +1,4 @@
+pub mod booth;
 pub mod group;
 pub mod library;
 pub mod names;

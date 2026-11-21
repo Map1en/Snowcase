@@ -291,6 +291,69 @@ impl Store {
         Ok(())
     }
 
+    pub fn set_store_source(
+        &mut self,
+        item_id: ItemId,
+        store: StoreKind,
+        url: &str,
+        external_id: &str,
+        author: &str,
+    ) -> Result<()> {
+        self.conn.transaction(|conn| {
+            diesel::delete(
+                item_source::table
+                    .filter(item_source::item_id.eq(item_id))
+                    .filter(item_source::store.eq(store)),
+            )
+            .execute(conn)?;
+            diesel::insert_into(item_source::table)
+                .values((
+                    item_source::item_id.eq(item_id),
+                    item_source::store.eq(store),
+                    item_source::url.eq(url),
+                    item_source::external_id.eq(external_id),
+                    item_source::author.eq(author),
+                ))
+                .execute(conn)?;
+            Ok(())
+        })
+    }
+
+    pub fn set_cover(&mut self, item_id: ItemId, media: &Media, origin: ImageOrigin) -> Result<()> {
+        self.conn.transaction(|conn| {
+            diesel::insert_or_ignore_into(media::table)
+                .values((
+                    media::hash.eq(&media.hash),
+                    media::mime.eq(&media.mime),
+                    media::width.eq(media.width),
+                    media::height.eq(media.height),
+                    media::bytes.eq(media.bytes),
+                ))
+                .execute(conn)?;
+            let position: i32 = item_image::table
+                .filter(item_image::item_id.eq(item_id))
+                .count()
+                .get_result::<i64>(conn)
+                .map(|count| count as i32)?;
+            diesel::insert_or_ignore_into(item_image::table)
+                .values((
+                    item_image::item_id.eq(item_id),
+                    item_image::media_hash.eq(&media.hash),
+                    item_image::position.eq(position),
+                    item_image::origin.eq(origin),
+                ))
+                .execute(conn)?;
+            diesel::update(item::table.find(item_id))
+                .set((item::cover_media.eq(&media.hash), item::updated_at.eq(now_ms())))
+                .execute(conn)?;
+            Ok(())
+        })
+    }
+
+    pub fn load_media(&mut self) -> Result<Vec<Media>> {
+        Ok(media::table.order(media::hash).select(Media::as_select()).load(&mut self.conn)?)
+    }
+
     pub fn add_root(&mut self, path: &str) -> Result<RootId> {
         self.conn.transaction(|conn| {
             diesel::insert_or_ignore_into(root::table)

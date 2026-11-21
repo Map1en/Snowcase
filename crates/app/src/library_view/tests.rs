@@ -380,3 +380,43 @@ fn removing_a_library_folder_asks_first_and_then_drops_its_items(cx: &mut TestAp
     assert!(!exists(window, "scope-root-1", cx));
     assert!(assets.path().join("Outfit00.unitypackage").exists());
 }
+
+#[gpui_kit::test]
+fn a_link_that_is_not_booth_is_refused_without_going_online(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::library(3, 5);
+    let (window, view) = open_library(library, cx);
+
+    click(window, ("asset", 0usize), cx);
+    type_into(window, "booth-input", "https://example.com/items/7", cx);
+    press(window, "enter", cx);
+
+    assert!(exists(window, "booth-error", cx));
+    assert!(!exists(window, "open-booth", cx));
+    read(&view, cx, |view, library| assert!(library.booth_url(view.rows[0]).is_none()));
+}
+
+#[gpui_kit::test]
+fn a_linked_item_shows_its_booth_page_shop_and_cover(cx: &mut TestAppContext) {
+    let Fixture { mut library, dir: _dir } = fixtures::library(3, 5);
+    let id = library.items()[0].id;
+    let booth = snowcase_core::booth::BoothItem {
+        id: 7,
+        name: "Sample Outfit".into(),
+        shop: "Sample Shop".into(),
+        url: "https://shop.booth.pm/items/7".into(),
+        image: None,
+    };
+    let picture = snowcase_core::booth::Picture { bytes: b"not really a jpeg".to_vec(), mime: "image/jpeg".into() };
+    library.link_booth(id, &booth, Some(&picture)).unwrap();
+    let (window, view) = open_library(library, cx);
+    let ix = read(&view, cx, |view, _| view.rows.iter().position(|row| *row == id).unwrap());
+
+    click(window, ("asset", ix), cx);
+
+    assert!(exists(window, "open-booth", cx));
+    read(&view, cx, |_, library| {
+        assert_eq!(library.item(id).unwrap().title, "Sample Outfit");
+        assert_eq!(library.shops(), [("Sample Shop".to_owned(), 1)]);
+        assert!(library.cover_path(id).is_some());
+    });
+}

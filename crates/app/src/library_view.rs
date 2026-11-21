@@ -15,6 +15,7 @@ use snowcase_core::library::{
     Filter, Hit, Library, PackageSummary, Scope, Snapshot, SortKey, collect_files, inspect_file,
     item_node, shown_name,
 };
+use snowcase_core::booth;
 use snowcase_core::names::CodePage;
 use snowcase_core::{BlobId, FacetKey, FileKind, ItemId, LocationState, RootId, StoreError};
 
@@ -33,6 +34,11 @@ const UNSUPPORTED_LISTED: usize = 20;
 const TREE_FILES: usize = 200;
 
 type TreeNode = (BlobId, String, String);
+
+enum BoothStatus {
+    Fetching,
+    Failed(String),
+}
 
 struct Tree<'a> {
     blob: BlobId,
@@ -82,6 +88,8 @@ pub struct LibraryView {
     search: Entity<InputState>,
     tag_input: Entity<InputState>,
     folder_input: Entity<InputState>,
+    booth_input: Entity<InputState>,
+    booth_status: Option<BoothStatus>,
     selects: Vec<(FilterField, Choices)>,
     pending_imports: usize,
     last_failures: usize,
@@ -97,6 +105,7 @@ impl LibraryView {
         let search = cx.new(|cx| InputState::new(window, cx));
         let tag_input = cx.new(|cx| InputState::new(window, cx));
         let folder_input = cx.new(|cx| InputState::new(window, cx));
+        let booth_input = cx.new(|cx| InputState::new(window, cx));
         let selects: Vec<(FilterField, Choices)> =
             [FilterField::Category, FilterField::Target, FilterField::Shop, FilterField::Tag]
                 .into_iter()
@@ -144,6 +153,12 @@ impl LibraryView {
                     _ => {}
                 }
             }),
+            cx.subscribe_in(&booth_input, window, |this, input, event, _, cx| {
+                if let (InputEvent::PressEnter { .. }, Some(id)) = (event, this.selected) {
+                    let text = input.read(cx).value().to_string();
+                    this.link_booth(id, &text, cx);
+                }
+            }),
             cx.subscribe_in(&folder_input, window, |this, input, event, window, cx| {
                 let (InputEvent::PressEnter { .. }, Some(id)) = (event, this.selected) else {
                     return;
@@ -182,6 +197,8 @@ impl LibraryView {
             search,
             tag_input,
             folder_input,
+            booth_input,
+            booth_status: None,
             selects,
             pending_imports: 0,
             last_failures: 0,
@@ -203,6 +220,7 @@ impl LibraryView {
             (&self.search, "search.placeholder"),
             (&self.tag_input, "tag.placeholder"),
             (&self.folder_input, "folder.placeholder"),
+            (&self.booth_input, "booth.placeholder"),
         ] {
             let placeholder = tr!(cx, key);
             input.update(cx, |input, cx| input.set_placeholder(placeholder, window, cx));
@@ -279,6 +297,61 @@ impl LibraryView {
             return;
         }
         self.change(cx, move |library| library.tag(&item_node(id), &name));
+    }
+
+    fn link_booth(&mut self, id: ItemId, text: &str, cx: &mut Context<Self>) {
+        let Some(booth_id) = booth::item_id(text) else {
+            self.booth_status = Some(BoothStatus::Failed(tr!(cx, "booth.not_a_link").to_string()));
+            cx.notify();
+            return;
+        };
+        self.booth_status = Some(BoothStatus::Fetching);
+        cx.notify();
+        let fetched = cx.background_spawn(async move { booth::fetch(booth_id) });
+        cx.spawn(async move |this, cx| {
+            let fetched = fetched.await;
+            this.update(cx, |this, cx| {
+                match fetched {
+                    Ok((item, picture)) => {
+                        this.booth_status = None;
+                        this.change(cx, move |library| library.link_booth(id, &item, picture.as_ref()));
+                    }
+                    Err(error) => this.booth_status = Some(BoothStatus::Failed(error)),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn render_booth(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
+        let theme = cx.theme();
+        let link = library.booth_url(id).map(str::to_owned);
+        section(tr!(cx, "booth.title"))
+            .children(link.map(|url| {
+                Button::new("open-booth")
+                    .ghost()
+                    .small()
+                    .icon(IconName::ExternalLink)
+                    .label(tr!(cx, "booth.open"))
+                    .on_click(move |_, _, cx| cx.open_url(&url))
+            }))
+            .child(Input::new(&self.booth_input).id("booth-input").small())
+            .children(self.booth_status.as_ref().map(|status| match status {
+                BoothStatus::Fetching => div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(tr!(cx, "booth.fetching"))
+                    .into_any_element(),
+                BoothStatus::Failed(error) => div()
+                    .id("booth-error")
+                    .test_support()
+                    .text_xs()
+                    .text_color(theme.danger)
+                    .child(error.clone())
+                    .into_any_element(),
+            }))
     }
 
     fn use_tag(&mut self, name: String, window: &mut Window, cx: &mut Context<Self>) {
@@ -385,6 +458,8 @@ impl LibraryView {
         if self.selected != id {
             self.tag_input.update(cx, |input, cx| input.set_value("", window, cx));
             self.open_nodes.clear();
+            self.booth_status = None;
+            self.booth_input.update(cx, |input, cx| input.set_value("", window, cx));
         }
         self.selected = id;
         cx.notify();
@@ -904,6 +979,7 @@ impl LibraryView {
                 .child(self.render_attributes(id, library, cx))
                 .child(self.render_tags(id, library, cx))
                 .child(self.render_folders(id, library, cx))
+                .child(self.render_booth(id, library, cx))
                 .child(self.render_files(id, library, cx))
                 .into_any_element(),
         )
@@ -1350,6 +1426,16 @@ fn centered(id: &'static str, text: SharedString, color: Hsla) -> AnyElement {
 }
 
 fn cover(library: &Snapshot, id: ItemId, height: Pixels, theme: &Theme) -> Div {
+    if let Some(path) = library.cover_path(id) {
+        return div()
+            .w_full()
+            .h(height)
+            .flex_shrink_0()
+            .rounded_md()
+            .overflow_hidden()
+            .bg(theme.muted)
+            .child(img(path).size_full().object_fit(ObjectFit::Cover));
+    }
     let file = library.main_file(id);
     let file_name = file.map(shown_name);
     let kind = file
