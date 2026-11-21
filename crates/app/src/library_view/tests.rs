@@ -307,8 +307,8 @@ fn unsupported_archives_are_counted_in_the_status_bar(cx: &mut TestAppContext) {
     let (window, view) = open_library(library, cx);
 
     assert!(exists(window, "unsupported", cx));
-    view.read_with(cx, |view, _| {
-        assert_eq!(view.unsupported, [assets.path().join("TENSHI_CHOKER.rar").to_string_lossy()]);
+    view.read_with(cx, |view, cx| {
+        assert_eq!(view.store.read(cx).unsupported(), [assets.path().join("TENSHI_CHOKER.rar").to_string_lossy()]);
     });
 }
 

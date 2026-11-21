@@ -1,10 +1,14 @@
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 
 use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 use gpui_kit::*;
 use snowcase_core::StoreError;
-use snowcase_core::library::{Library, Outcome, run};
+use snowcase_core::ingest::names::CodePage;
+use snowcase_core::ingest::scan::read_root;
+use snowcase_core::library::{Library, Outcome, ScanReport, run};
 use snowcase_core::snapshot::Snapshot;
 
 type Job = Box<dyn FnOnce(&mut Library) + Send>;
@@ -37,8 +41,16 @@ enum Step {
     Stop,
 }
 
+#[derive(Default)]
+struct Scanning {
+    running: bool,
+    last: Option<Instant>,
+    unsupported: Vec<String>,
+}
+
 pub struct LibraryStore {
     snapshot: Option<Arc<Snapshot>>,
+    scanning: Scanning,
     error: Option<StoreError>,
     jobs: Option<mpsc::UnboundedSender<Job>>,
     pending: usize,
@@ -61,6 +73,7 @@ impl LibraryStore {
                 });
                 Self {
                     snapshot: Some(snapshot),
+                    scanning: Scanning::default(),
                     error: None,
                     jobs: Some(jobs),
                     pending: 0,
@@ -72,6 +85,7 @@ impl LibraryStore {
             }
             Err(error) => Self {
                 snapshot: None,
+                scanning: Scanning::default(),
                 error: Some(error),
                 jobs: None,
                 pending: 0,
@@ -97,6 +111,73 @@ impl LibraryStore {
 
     pub fn progress(&self) -> &Progress {
         &self.background.progress
+    }
+
+    pub fn is_scanning(&self) -> bool {
+        self.scanning.running
+    }
+
+    pub fn last_scan(&self) -> Option<Instant> {
+        self.scanning.last
+    }
+
+    pub fn unsupported(&self) -> &[String] {
+        &self.scanning.unsupported
+    }
+
+    pub fn scan(&mut self, new_root: Option<PathBuf>, cx: &mut Context<Self>) {
+        let has_roots = self.snapshot().is_some_and(|library| !library.roots().is_empty());
+        if self.scanning.running || (new_root.is_none() && !has_roots) {
+            return;
+        }
+        self.scanning.running = true;
+        cx.notify();
+        let code_page = system_code_page();
+        let prepared = self.change(cx, |library| {
+            let roots: Vec<PathBuf> = library.roots().iter().map(|(root, _)| PathBuf::from(&root.path)).collect();
+            Ok((roots, library.archive_cache()))
+        });
+        cx.spawn(async move |this, cx| {
+            let mut unsupported = None;
+            if let Some((mut roots, cache)) = prepared.await {
+                if let Some(root) = new_root.filter(|root| !roots.contains(root)) {
+                    roots.push(root);
+                }
+                let scans = cx
+                    .background_spawn(async move {
+                        roots
+                            .iter()
+                            .filter(|root| root.is_dir())
+                            .map(|root| read_root(root, code_page, &cache))
+                            .collect::<Vec<_>>()
+                    })
+                    .await;
+                let applied = this.update(cx, |this, cx| {
+                    this.change(cx, move |library| {
+                        let mut report = ScanReport::default();
+                        for scan in scans {
+                            let root = scan.root.clone();
+                            report.absorb(&root, library.apply_scan(scan)?);
+                        }
+                        Ok(report.unsupported)
+                    })
+                });
+                if let Ok(applied) = applied {
+                    unsupported = applied.await;
+                }
+            }
+            this.update(cx, |this, cx| {
+                this.scanning.running = false;
+                this.scanning.last = Some(cx.background_executor().now());
+                if let Some(unsupported) = unsupported {
+                    this.scanning.unsupported = unsupported;
+                }
+                this.start_background(cx);
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     pub fn start_background(&mut self, cx: &mut Context<Self>) {
@@ -264,6 +345,20 @@ fn finish(this: &WeakEntity<LibraryStore>, cx: &mut AsyncApp) {
         }
     })
     .ok();
+}
+
+#[cfg(windows)]
+fn system_code_page() -> CodePage {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetACP() -> u32;
+    }
+    CodePage::from_ansi(unsafe { GetACP() })
+}
+
+#[cfg(not(windows))]
+fn system_code_page() -> CodePage {
+    CodePage::Other
 }
 
 #[cfg(test)]

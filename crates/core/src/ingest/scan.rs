@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::BufReader;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use snowcase_formats::{ArchiveEntry, FileKind, guess_kind, is_junk, list_7z, list_zip};
+
+use super::group::{self, Plan};
+use super::names::CodePage;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FoundFile {
@@ -133,9 +136,33 @@ impl ArchiveCache {
     pub fn get(&self, path: &str) -> Option<&[ArchiveEntry]> {
         self.0.get(path).map(|(_, _, entries)| entries.as_slice())
     }
+
+    pub fn absorb(&mut self, fresh: ArchiveCache) {
+        self.0.extend(fresh.0);
+    }
 }
 
-pub fn probe(root: &Path, files: &[FoundFile], cache: &mut ArchiveCache) -> HashMap<String, Vec<ArchiveEntry>> {
+pub struct RootScan {
+    pub root: PathBuf,
+    pub walk: Walk,
+    pub plan: Plan,
+    pub fresh: ArchiveCache,
+}
+
+pub fn read_root(root: &Path, code_page: CodePage, cache: &ArchiveCache) -> RootScan {
+    let walk = walk(root);
+    let (listings, fresh) = probe(root, &walk.files, cache);
+    let plan = group::plan(&walk.files, &listings, code_page);
+    RootScan {
+        root: root.to_path_buf(),
+        walk,
+        plan,
+        fresh,
+    }
+}
+
+fn probe(root: &Path, files: &[FoundFile], cache: &ArchiveCache) -> (HashMap<String, Vec<ArchiveEntry>>, ArchiveCache) {
+    let mut fresh = ArchiveCache::default();
     let mut listings = HashMap::new();
     for file in files.iter().filter(|file| file.kind == FileKind::Archive) {
         let path = root.join(&file.rel_path).to_string_lossy().into_owned();
@@ -159,11 +186,11 @@ pub fn probe(root: &Path, files: &[FoundFile], cache: &mut ArchiveCache) -> Hash
             None
         };
         if let Some(entries) = listed {
-            cache.0.insert(path, (file.size, file.modified_ms, entries.clone()));
+            fresh.0.insert(path, (file.size, file.modified_ms, entries.clone()));
             listings.insert(file.rel_path.clone(), entries);
         }
     }
-    listings
+    (listings, fresh)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

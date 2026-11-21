@@ -8,9 +8,8 @@ use snowcase_store::{
 };
 
 use super::Library;
-use crate::ingest::group;
 use crate::ingest::names::{CodePage, version_of};
-use crate::ingest::scan::{self, FoundFile, KnownFile, WalkError};
+use crate::ingest::scan::{self, ArchiveCache, FoundFile, KnownFile, RootScan, WalkError};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ScanReport {
@@ -34,7 +33,7 @@ struct Known {
 }
 
 impl ScanReport {
-    fn absorb(&mut self, root: &Path, other: ScanReport) {
+    pub fn absorb(&mut self, root: &Path, other: ScanReport) {
         let full = |rel: String| root.join(rel).to_string_lossy().into_owned();
         self.new_items += other.new_items;
         self.new_files += other.new_files;
@@ -62,13 +61,21 @@ impl Library {
     }
 
     pub fn scan_root(&mut self, root: &Path, code_page: CodePage) -> Result<ScanReport, StoreError> {
+        let scan = scan::read_root(root, code_page, &self.archives);
+        self.apply_scan(scan)
+    }
+
+    pub fn archive_cache(&self) -> ArchiveCache {
+        self.archives.clone()
+    }
+
+    pub fn apply_scan(&mut self, scan: RootScan) -> Result<ScanReport, StoreError> {
+        let RootScan { root, walk, plan, fresh } = scan;
+        self.archives.absorb(fresh);
         let root_text = root
             .to_str()
-            .ok_or_else(|| StoreError::NonUtf8Path(root.to_path_buf()))?
+            .ok_or_else(|| StoreError::NonUtf8Path(root.clone()))?
             .to_owned();
-        let walk = scan::walk(root);
-        let listings = scan::probe(root, &walk.files, &mut self.archives);
-        let plan = group::plan(&walk.files, &listings, code_page);
 
         let catalog = &self.snapshot.catalog;
         let existing_root = catalog.roots.iter().find(|r| r.path == root_text).map(|r| r.id);
