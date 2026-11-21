@@ -91,6 +91,7 @@ diesel::table! {
         store -> Text,
         url -> Nullable<Text>,
         external_id -> Nullable<Text>,
+        title -> Nullable<Text>,
         author -> Nullable<Text>,
         account -> Nullable<Text>,
     }

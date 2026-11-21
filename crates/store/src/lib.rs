@@ -297,6 +297,7 @@ impl Store {
         store: StoreKind,
         url: &str,
         external_id: &str,
+        title: &str,
         author: &str,
     ) -> Result<()> {
         self.conn.transaction(|conn| {
@@ -312,6 +313,7 @@ impl Store {
                     item_source::store.eq(store),
                     item_source::url.eq(url),
                     item_source::external_id.eq(external_id),
+                    item_source::title.eq(title),
                     item_source::author.eq(author),
                 ))
                 .execute(conn)?;

@@ -16,6 +16,7 @@ pub struct ItemFacts {
     pub roots: BTreeSet<RootId>,
     pub attributes: Vec<(FacetKey, String)>,
     pub shop: Option<String>,
+    pub store_titles: Vec<String>,
 }
 
 impl ItemFacts {
@@ -77,8 +78,14 @@ pub(crate) fn facts_of(catalog: &Catalog, wanted: impl Fn(ItemId) -> bool) -> Ha
         }
     }
     for source in &catalog.sources {
-        if let (Some(entry), Some(author)) = (facts.get_mut(&source.item_id), &source.author) {
+        let Some(entry) = facts.get_mut(&source.item_id) else {
+            continue;
+        };
+        if let Some(author) = &source.author {
             entry.shop.get_or_insert_with(|| author.clone());
+        }
+        if let Some(title) = &source.title {
+            entry.store_titles.push(title.clone());
         }
     }
     let mut by_item: HashMap<ItemId, Vec<&Facet>> = HashMap::new();

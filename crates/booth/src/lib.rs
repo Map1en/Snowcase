@@ -1,6 +1,9 @@
+use std::time::Duration;
+
 use serde::Deserialize;
 
 const USER_AGENT: &str = "Snowcase";
+const TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoothItem {
@@ -63,7 +66,8 @@ pub fn parse_item(json: &str) -> Result<BoothItem, String> {
 }
 
 pub fn fetch(id: u64) -> Result<(BoothItem, Option<Image>), String> {
-    let get = |url: &str| ureq::get(url).header("User-Agent", USER_AGENT).call().map_err(|error| error.to_string());
+    let agent: ureq::Agent = ureq::Agent::config_builder().timeout_global(Some(TIMEOUT)).build().into();
+    let get = |url: &str| agent.get(url).header("User-Agent", USER_AGENT).call().map_err(|error| error.to_string());
     let json = get(&format!("https://booth.pm/ja/items/{id}.json"))?
         .body_mut()
         .read_to_string()

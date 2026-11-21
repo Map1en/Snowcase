@@ -135,12 +135,12 @@ impl Snapshot {
         Some(media_path(&self.media_dir, hash, &media.mime))
     }
 
-    pub fn booth_url(&self, id: ItemId) -> Option<&str> {
+    pub fn booth_page(&self, id: ItemId) -> Option<(&str, &str)> {
         self.catalog
             .sources
             .iter()
             .find(|source| source.item_id == id && source.store == StoreKind::Booth)
-            .and_then(|source| source.url.as_deref())
+            .and_then(|source| Some((source.url.as_deref()?, source.title.as_deref().unwrap_or_default())))
     }
 
     pub(crate) fn node_tags_of(&self, id: ItemId) -> impl Iterator<Item = &NodeTag> {

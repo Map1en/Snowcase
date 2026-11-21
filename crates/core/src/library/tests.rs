@@ -475,9 +475,10 @@ fn linking_a_booth_page_sets_title_shop_link_and_a_stored_cover() {
     library.link_booth(gloves, &booth, Some(&picture)).unwrap();
     library.link_booth(gloves, &booth, Some(&picture)).unwrap();
 
-    assert_eq!(library.item(gloves).unwrap().title, "Sample Gloves");
+    assert_eq!(library.item(gloves).unwrap().title, "Gloves", "the title stays the user's");
     assert_eq!(library.facts(gloves).unwrap().shop.as_deref(), Some("Sample Shop"));
-    assert_eq!(library.booth_url(gloves), Some("https://shop.booth.pm/items/7"));
+    assert_eq!(library.booth_page(gloves), Some(("https://shop.booth.pm/items/7", "Sample Gloves")));
+    assert_eq!(titles(&library.query(&Filter::search("sample glo"), SortKey::Name)), ["Gloves"]);
     assert_eq!(library.snapshot().catalog.sources.len(), 1, "linking again replaces the link");
     let cover = library.cover_path(gloves).unwrap();
     assert!(cover.starts_with(dir.path().join("media")));

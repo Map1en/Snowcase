@@ -106,6 +106,7 @@ impl Snapshot {
         fits && (needle.is_empty()
             || item.title.to_lowercase().contains(needle)
             || facts.shop.as_ref().is_some_and(|shop| shop.to_lowercase().contains(needle))
+            || facts.store_titles.iter().any(|title| title.to_lowercase().contains(needle))
             || self.hit(item.id, needle).is_some())
     }
 

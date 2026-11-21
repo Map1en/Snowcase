@@ -21,6 +21,7 @@ CREATE TABLE item_source (
     store TEXT NOT NULL,
     url TEXT,
     external_id TEXT,
+    title TEXT,
     author TEXT,
     account TEXT
 );

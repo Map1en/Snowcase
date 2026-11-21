@@ -122,14 +122,7 @@ impl Library {
             None => None,
         };
         self.store.transaction(|store| {
-            store.update_item(
-                id,
-                &ItemChanges {
-                    title: Some(page.name.clone()),
-                    note: None,
-                },
-            )?;
-            store.set_store_source(id, StoreKind::Booth, &page.url, &page.external_id, &page.shop)?;
+            store.set_store_source(id, StoreKind::Booth, &page.url, &page.external_id, &page.name, &page.shop)?;
             if let Some(media) = &media {
                 store.set_cover(id, media, ImageOrigin::Store)?;
             }

@@ -191,6 +191,7 @@ pub struct ItemSource {
     pub store: StoreKind,
     pub url: Option<String>,
     pub external_id: Option<String>,
+    pub title: Option<String>,
     pub author: Option<String>,
     pub account: Option<String>,
 }

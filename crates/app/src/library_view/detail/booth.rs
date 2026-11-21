@@ -39,15 +39,20 @@ impl LibraryView {
 
     pub(crate) fn render_booth(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
-        let link = library.booth_url(id).map(str::to_owned);
+        let page = library.booth_page(id).map(|(url, title)| (url.to_owned(), title.to_owned()));
         section(tr!(cx, "booth.title"))
-            .children(link.map(|url| {
-                Button::new("open-booth")
-                    .ghost()
-                    .small()
-                    .icon(IconName::ExternalLink)
-                    .label(tr!(cx, "booth.open"))
-                    .on_click(move |_, _, cx| cx.open_url(&url))
+            .children(page.map(|(url, title)| {
+                v_flex()
+                    .gap_1()
+                    .child(div().text_sm().child(title))
+                    .child(
+                        Button::new("open-booth")
+                            .ghost()
+                            .small()
+                            .icon(IconName::ExternalLink)
+                            .label(tr!(cx, "booth.open"))
+                            .on_click(move |_, _, cx| cx.open_url(&url)),
+                    )
             }))
             .child(Input::new(&self.booth_input).id("booth-input").small())
             .children(self.booth_status.as_ref().map(|status| match status {

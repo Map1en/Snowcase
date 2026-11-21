@@ -393,7 +393,7 @@ fn a_link_that_is_not_booth_is_refused_without_going_online(cx: &mut TestAppCont
 
     assert!(exists(window, "booth-error", cx));
     assert!(!exists(window, "open-booth", cx));
-    read(&view, cx, |view, library| assert!(library.booth_url(view.rows[0]).is_none()));
+    read(&view, cx, |view, library| assert!(library.booth_page(view.rows[0]).is_none()));
 }
 
 #[gpui_kit::test]
@@ -415,7 +415,7 @@ fn a_linked_item_shows_its_booth_page_shop_and_cover(cx: &mut TestAppContext) {
 
     assert!(exists(window, "open-booth", cx));
     read(&view, cx, |_, library| {
-        assert_eq!(library.item(id).unwrap().title, "Sample Outfit");
+        assert_eq!(library.booth_page(id).map(|(_, title)| title), Some("Sample Outfit"));
         assert_eq!(library.shops(), [("Sample Shop".to_owned(), 1)]);
         assert!(library.cover_path(id).is_some());
     });
