@@ -159,7 +159,7 @@ fn a_new_version_becomes_its_own_item_with_its_version() {
         .library
         .items()
         .iter()
-        .map(|item| fx.library.facets(&crate::library::item_node(item.id), FacetKey::Version)[0].value.clone())
+        .map(|item| fx.library.facets(&crate::snapshot::item_node(item.id), FacetKey::Version)[0].value.clone())
         .collect();
     versions.sort();
     assert_eq!(versions, ["1.0", "1.1"]);

@@ -12,7 +12,8 @@ use snowcase_store::{
     BlobId, FacetKey, FacetOrigin, FacetValue, ItemId, LocationState, PackageKey, ScannedPackage, StoreError,
 };
 
-use super::{Library, PackageSummary, item_node};
+use super::Library;
+use crate::snapshot::{PackageSummary, item_node};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Task {

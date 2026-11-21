@@ -4,7 +4,8 @@ use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 use gpui_kit::*;
 use snowcase_core::StoreError;
-use snowcase_core::library::{Library, Outcome, Snapshot, run};
+use snowcase_core::library::{Library, Outcome, run};
+use snowcase_core::snapshot::Snapshot;
 
 type Job = Box<dyn FnOnce(&mut Library) + Send>;
 

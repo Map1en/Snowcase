@@ -6,9 +6,11 @@ use flate2::write::GzEncoder;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use snowcase_core::FileKind;
-use snowcase_core::library::{FileInfo, Library, item_node};
+use snowcase_core::ingest::files::FileInfo;
+use snowcase_core::library::Library;
+use snowcase_core::snapshot::item_node;
 use snowcase_core::{FacetKey, FacetValue, FolderId};
-use snowcase_core::names::CodePage;
+use snowcase_core::ingest::names::CodePage;
 
 const NOUNS: [&str; 8] = [
     "Avatar", "Outfit", "Earrings", "Hair", "Shader", "Tool", "Textures", "Set",

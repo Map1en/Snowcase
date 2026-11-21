@@ -1,7 +1,6 @@
-pub mod group;
+pub mod ingest;
 pub mod library;
-pub mod names;
-pub mod scan;
+pub mod snapshot;
 
 pub use snowcase_formats::FileKind;
 pub use snowcase_store::{

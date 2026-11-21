@@ -8,7 +8,7 @@ use zip::write::SimpleFileOptions;
 
 use super::*;
 use snowcase_store::FacetKey;
-use crate::names::CodePage;
+use crate::ingest::names::CodePage;
 
 const PACKAGE: &[u8] = b"package bytes";
 
@@ -295,12 +295,12 @@ fn searching_finds_a_part_inside_a_package_and_says_where_it_is() {
     library.scan_root(assets.path(), CodePage::Other).unwrap();
     run_all(&mut library);
 
-    let found = library.query(&crate::library::Filter::search("tights"), crate::library::SortKey::Name);
+    let found = library.query(&crate::snapshot::Filter::search("tights"), crate::snapshot::SortKey::Name);
 
     assert_eq!(found.iter().map(|item| item.title.as_str()).collect::<Vec<_>>(), ["Plumery_Bikini"]);
     assert_eq!(
         library.hit(found[0].id, "tights"),
-        Some(crate::library::Hit::Package {
+        Some(crate::snapshot::Hit::Package {
             file: "Plumery_Bikini.zip".into(),
             package: "Bikini.unitypackage".into(),
             path: "Assets/Shop/Bikini/Tights_Black.prefab".into(),
@@ -309,7 +309,7 @@ fn searching_finds_a_part_inside_a_package_and_says_where_it_is() {
     let hair = library.items().iter().find(|item| item.title == "Hair").unwrap().id;
     assert_eq!(
         library.hit(hair, "hair.prefab"),
-        Some(crate::library::Hit::Package {
+        Some(crate::snapshot::Hit::Package {
             file: "Hair.unitypackage".into(),
             package: "Hair.unitypackage".into(),
             path: "Assets/Shop/Hair/Hair.prefab".into(),

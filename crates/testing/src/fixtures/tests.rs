@@ -1,5 +1,6 @@
 use super::*;
-use snowcase_core::library::{Filter, ItemFacts, Library, Scope, SortKey};
+use snowcase_core::library::Library;
+use snowcase_core::snapshot::{Filter, ItemFacts, Scope, SortKey};
 
 fn snapshot(fixture: &Fixture) -> Vec<(String, usize, usize)> {
     let library = &fixture.library;

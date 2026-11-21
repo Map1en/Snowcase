@@ -12,11 +12,10 @@ use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use snowcase_booth as booth;
-use snowcase_core::library::{
-    Filter, Hit, Library, PackageSummary, Picture, Scope, Snapshot, SortKey, StorePage, collect_files,
-    inspect_file, item_node, shown_name,
-};
-use snowcase_core::names::CodePage;
+use snowcase_core::ingest::files::{collect_files, inspect_file};
+use snowcase_core::library::{Library, Picture, StorePage};
+use snowcase_core::snapshot::{Filter, Hit, PackageSummary, Scope, Snapshot, SortKey, item_node, shown_name};
+use snowcase_core::ingest::names::CodePage;
 use snowcase_core::{BlobId, FacetKey, FileKind, ItemId, LocationState, RootId, StoreError};
 
 use crate::i18n::{self, Locale, tr};

@@ -8,9 +8,9 @@ use snowcase_store::{
 };
 
 use super::Library;
-use crate::group;
-use crate::names::{CodePage, version_of};
-use crate::scan::{self, FoundFile, KnownFile, WalkError};
+use crate::ingest::group;
+use crate::ingest::names::{CodePage, version_of};
+use crate::ingest::scan::{self, FoundFile, KnownFile, WalkError};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ScanReport {
@@ -179,7 +179,7 @@ impl Library {
                         let item = store.create_item(&group.title)?;
                         if let Some(version) = &group.version {
                             store.replace_facets(
-                                &super::item_node(item),
+                                &crate::snapshot::item_node(item),
                                 FacetKey::Version,
                                 FacetOrigin::Auto,
                                 &[FacetValue {

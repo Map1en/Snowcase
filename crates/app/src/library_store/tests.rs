@@ -1,6 +1,6 @@
 use gpui_kit::{AppContext, Entity, TestAppContext};
 use snowcase_core::StoreError;
-use snowcase_core::library::item_node;
+use snowcase_core::snapshot::item_node;
 use snowcase_testing::fixtures::{self, Fixture};
 
 use super::LibraryStore;
@@ -162,7 +162,7 @@ fn work_found_while_a_run_is_going_is_picked_up_when_it_ends(cx: &mut TestAppCon
     let root = assets.path().to_path_buf();
     store.update(cx, |store, cx| {
         store
-            .change(cx, move |library| library.scan_root(&root, snowcase_core::names::CodePage::Other))
+            .change(cx, move |library| library.scan_root(&root, snowcase_core::ingest::names::CodePage::Other))
             .detach();
         store.start_background(cx);
         store.resume_background(cx);

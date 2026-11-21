@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use snowcase_formats::{ArchiveEntry, FileKind};
 
-use crate::names::{CodePage, name_key, repair_mojibake, title_of, version_of};
-use crate::scan::FoundFile;
+use crate::ingest::names::{CodePage, name_key, repair_mojibake, title_of, version_of};
+use crate::ingest::scan::FoundFile;
 
 const SIGNALS: &[&str] = &["unitypackage", "fbx", "blend", "vrm", "psd", "prefab"];
 

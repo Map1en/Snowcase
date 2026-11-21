@@ -1,6 +1,7 @@
 use gpui_kit::{AnyWindowHandle, AppContext, Entity, TestAppContext};
 use snowcase_core::FacetKey;
-use snowcase_core::library::{Filter, Library, Scope, SortKey, item_node};
+use snowcase_core::library::Library;
+use snowcase_core::snapshot::{Filter, Scope, SortKey, item_node};
 use snowcase_testing::fixtures::{self, Fixture};
 use snowcase_testing::ui::{activate, choose, clear, click, count, drop_paths, exists, open, press, type_into};
 
@@ -18,7 +19,7 @@ fn open_library(
     })
 }
 
-fn read<T>(view: &Entity<LibraryView>, cx: &mut TestAppContext, read: impl FnOnce(&LibraryView, &snowcase_core::library::Snapshot) -> T) -> T {
+fn read<T>(view: &Entity<LibraryView>, cx: &mut TestAppContext, read: impl FnOnce(&LibraryView, &snowcase_core::snapshot::Snapshot) -> T) -> T {
     view.read_with(cx, |view, cx| read(view, view.store.read(cx).snapshot().unwrap()))
 }
 
