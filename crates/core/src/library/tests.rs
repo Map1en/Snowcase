@@ -446,3 +446,39 @@ fn tag_suggestions_offer_close_spellings_most_used_first() {
     assert_eq!(names("o"), Vec::<String>::new());
     assert_eq!(names(""), ["Black Tights", "Black", "Olive"]);
 }
+
+#[test]
+fn merging_moves_files_tags_folders_and_user_values_and_drops_the_other_item() {
+    let (dir, mut library) = sample();
+    let gloves = id_of(&library, "Gloves");
+    let hair = id_of(&library, "Hair");
+    let hair_blob = library.files(hair)[0].blob.id;
+    let hair_file = FacetNode {
+        item_id: hair,
+        blob_id: Some(hair_blob),
+        inner_path: None,
+    };
+    let value = |text: &str| FacetValue {
+        value: text.into(),
+        target_item_id: None,
+    };
+    library.tag(&item_node(hair), "winter").unwrap();
+    library.tag(&hair_file, "olive").unwrap();
+    let folder = library.create_folder(None, "Avatars").unwrap().unwrap();
+    library.put_in_folder(hair, folder).unwrap();
+    library.set_user_facets(&item_node(hair), FacetKey::Category, &[value("hair")]).unwrap();
+    library.set_auto_facets(&item_node(hair), FacetKey::Shop, &[value("Old Shop")]).unwrap();
+    library.set_auto_facets(&item_node(gloves), FacetKey::Shop, &[value("Shop")]).unwrap();
+
+    library.merge_items(gloves, hair).unwrap();
+
+    assert!(library.item(hair).is_none());
+    assert_eq!(library.files(gloves).len(), 2);
+    assert!(library.tags_of(gloves).iter().any(|tag| tag.name == "winter"));
+    assert_eq!(library.file_tags(gloves, hair_blob)[0].name, "olive");
+    assert_eq!(library.folders_of(gloves)[0].name, "Avatars");
+    let values = |key| -> Vec<String> { library.facets(&item_node(gloves), key).into_iter().map(|facet| facet.value).collect() };
+    assert_eq!(values(FacetKey::Category), ["hair"]);
+    assert_eq!(values(FacetKey::Shop), ["Shop"], "the other item's automatic values are dropped");
+    assert_matches_a_full_reload(&library, dir.path());
+}

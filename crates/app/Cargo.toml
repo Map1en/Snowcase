@@ -15,3 +15,4 @@ sys-locale = { workspace = true }
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
 snowcase-testing = { workspace = true }
+tempfile = { workspace = true }

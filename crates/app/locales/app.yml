@@ -365,3 +365,15 @@ package.failed:
   zh-TW: 讀不了這個包
   ja: このパッケージは読み取れません
   ko: 이 패키지를 읽을 수 없습니다
+hint.same_package:
+  en: "Maybe the same item: %{title} (same package folder)"
+  zh-CN: 可能是同一个商品：%{title}（同一个包根）
+  zh-TW: 可能是同一個商品：%{title}（同一個包根）
+  ja: 同じ商品かもしれません：%{title}（同じパッケージフォルダー）
+  ko: "같은 상품일 수 있습니다: %{title} (같은 패키지 폴더)"
+action.merge_here:
+  en: Merge here
+  zh-CN: 合并到这里
+  zh-TW: 合併到這裡
+  ja: ここに統合
+  ko: 여기로 합치기

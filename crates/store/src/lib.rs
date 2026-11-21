@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use diesel::connection::{AnsiTransactionManager, SimpleConnection, TransactionManager};
 use diesel::dsl::max;
 use diesel::prelude::*;
-use diesel::sql_types::Text;
+use diesel::sql_types::{BigInt, Text};
 use diesel::sqlite::{Sqlite, SqliteConnection};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 
@@ -562,6 +562,34 @@ impl Store {
 
     pub fn remove_from_folder(&mut self, item_id: ItemId, folder_id: FolderId) -> Result<()> {
         diesel::delete(item_folder::table.find((item_id, folder_id))).execute(&mut self.conn)?;
+        Ok(())
+    }
+
+    pub fn merge_items(&mut self, into: ItemId, from: ItemId) -> Result<()> {
+        const STEPS: [&str; 7] = [
+            "INSERT OR IGNORE INTO item_file
+                 (item_id, blob_id, file_name, display_name, added_at, extracted_from_blob_id, extracted_from_path)
+             SELECT ?1, blob_id, file_name, display_name, added_at, extracted_from_blob_id, extracted_from_path
+             FROM item_file WHERE item_id = ?2",
+            "UPDATE OR IGNORE facet SET item_id = ?1
+             WHERE item_id = ?2 AND (blob_id IS NOT NULL OR (origin = 'user' AND NOT EXISTS (
+                 SELECT 1 FROM facet AS kept
+                 WHERE kept.item_id = ?1 AND kept.blob_id IS NULL AND kept.key = facet.key AND kept.origin = 'user')))",
+            "UPDATE OR IGNORE node_tag SET item_id = ?1 WHERE item_id = ?2",
+            "INSERT OR IGNORE INTO item_folder (item_id, folder_id) SELECT ?1, folder_id FROM item_folder WHERE item_id = ?2",
+            "UPDATE item_source SET item_id = ?1 WHERE item_id = ?2",
+            "UPDATE facet SET target_item_id = ?1 WHERE target_item_id = ?2",
+            "DELETE FROM item WHERE id = ?2 AND ?1 <> ?2",
+        ];
+        self.conn.transaction(|conn| {
+            for step in STEPS {
+                diesel::sql_query(step)
+                    .bind::<BigInt, _>(into.0)
+                    .bind::<BigInt, _>(from.0)
+                    .execute(conn)?;
+            }
+            Ok::<_, diesel::result::Error>(())
+        })?;
         Ok(())
     }
 }

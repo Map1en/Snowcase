@@ -395,6 +395,14 @@ impl Library {
         self.refresh_items(&[id])
     }
 
+    pub fn merge_items(&mut self, into: ItemId, from: ItemId) -> Result<(), StoreError> {
+        if into == from {
+            return Ok(());
+        }
+        self.store.merge_items(into, from)?;
+        self.refresh_items(&[into, from])
+    }
+
     pub fn remove_from_folder(&mut self, id: ItemId, folder: FolderId) -> Result<(), StoreError> {
         self.store.remove_from_folder(id, folder)?;
         self.refresh_items(&[id])
@@ -485,6 +493,39 @@ impl Snapshot {
             let (archive, member) = (file.extracted_from_blob_id?, file.extracted_from_path.as_deref()?);
             self.packages.get(&self.package_key(archive, member)?)
         })
+    }
+
+    fn package_roots(&self, id: ItemId) -> HashSet<&str> {
+        self.catalog
+            .files
+            .iter()
+            .filter(|file| file.item_id == id)
+            .flat_map(|file| {
+                let inside = self.packages_in(file.blob_id).into_iter().map(|(_, summary)| summary);
+                self.package_of(file).into_iter().chain(inside).collect::<Vec<_>>()
+            })
+            .filter_map(|summary| summary.root.as_deref())
+            .collect()
+    }
+
+    pub fn merge_candidates(&self, id: ItemId) -> Vec<ItemId> {
+        let roots = self.package_roots(id);
+        if roots.is_empty() {
+            return Vec::new();
+        }
+        let version = |item: ItemId| self.facts.get(&item).and_then(|facts| facts.attribute(FacetKey::Version));
+        let mine = version(id);
+        self.catalog
+            .items
+            .iter()
+            .map(|item| item.id)
+            .filter(|other| *other != id)
+            .filter(|other| match (mine, version(*other)) {
+                (Some(a), Some(b)) => a == b,
+                _ => true,
+            })
+            .filter(|other| !self.package_roots(*other).is_disjoint(&roots))
+            .collect()
     }
 
     fn shop_from_packages(&self, id: ItemId) -> Option<String> {

@@ -259,3 +259,23 @@ fn a_shop_the_user_removed_stays_removed_when_the_package_is_read_again() {
 
     assert!(shop_of_only_item(&library).is_empty());
 }
+
+#[test]
+fn items_installing_the_same_package_root_are_offered_for_merging_unless_their_versions_differ() {
+    let data = tempfile::tempdir().unwrap();
+    let assets = tempfile::tempdir().unwrap();
+    let outfit = |file: &str| unitypackage(&[&format!("Assets/Shop/Outfit/{file}")]);
+    write(assets.path(), "Outfit_Body.unitypackage", &outfit("Outfit.prefab"));
+    write(assets.path(), "Textures/Kisekae_tex.unitypackage", &outfit("Tex.png"));
+    write(assets.path(), "Ribbon_v1.0.unitypackage", &unitypackage(&["Assets/Shop/Ribbon/Ribbon.prefab"]));
+    write(assets.path(), "Ribbon_v2.0.unitypackage", &unitypackage(&["Assets/Shop/Ribbon/Ribbon2.prefab"]));
+    let mut library = Library::open(data.path()).unwrap();
+    library.scan_root(assets.path(), CodePage::Other).unwrap();
+    run_all(&mut library);
+    let id = |title: &str| library.items().iter().find(|item| item.title == title).unwrap().id;
+
+    assert_eq!(library.merge_candidates(id("Outfit_Body")), [id("Textures")]);
+    let ribbons: Vec<_> = library.items().iter().filter(|item| item.title == "Ribbon").map(|item| item.id).collect();
+    assert_eq!(ribbons.len(), 2);
+    assert!(library.merge_candidates(ribbons[0]).is_empty());
+}

@@ -6861,6 +6861,7 @@ dependencies = [
  "snowcase-core",
  "snowcase-testing",
  "sys-locale",
+ "tempfile",
 ]
 
 [[package]]

@@ -1006,6 +1006,25 @@ impl LibraryView {
                     .on_click(cx.listener(move |this, _, window, cx| this.select(Some(other), window, cx))),
             );
         }
+        for (ix, other) in library.merge_candidates(id).into_iter().enumerate() {
+            let title = library.item(other).map(|item| item.title.clone()).unwrap_or_default();
+            list = list.child(
+                h_flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .items_center()
+                    .child(hint(tr!(cx, "hint.same_package", title = title), theme).flex_1().min_w_0())
+                    .child(
+                        Button::new(("merge", ix))
+                            .outline()
+                            .xsmall()
+                            .label(tr!(cx, "action.merge_here"))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.change(cx, move |library| library.merge_items(id, other));
+                            })),
+                    ),
+            );
+        }
         list
     }
 }

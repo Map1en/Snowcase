@@ -245,3 +245,24 @@ fn the_top_bar_stays_one_row_so_nothing_covers_the_sidebar_or_the_cards(cx: &mut
     assert!(exists(window, "detail", cx));
     view.read_with(cx, |view, _| assert_eq!(view.filter.scope, Scope::All));
 }
+
+#[gpui_kit::test]
+fn items_from_the_same_package_folder_can_be_merged_from_the_detail(cx: &mut TestAppContext) {
+    let assets = tempfile::tempdir().unwrap();
+    let outfit = |file: &str| fixtures::unitypackage(&[&format!("Assets/Shop/Outfit/{file}")]);
+    std::fs::write(assets.path().join("Outfit_Body.unitypackage"), outfit("Outfit.prefab")).unwrap();
+    std::fs::create_dir(assets.path().join("Textures")).unwrap();
+    std::fs::write(assets.path().join("Textures/Kisekae_tex.unitypackage"), outfit("Tex.png")).unwrap();
+    let Fixture { library, dir: _dir } = fixtures::empty();
+    let (window, _) = open_library(library, cx);
+    click(window, "add-root", cx);
+    cx.simulate_path_prompt_response(|_| Some(vec![assets.path().to_path_buf()]));
+    assert_eq!(count(window, "asset", cx), 2);
+
+    click(window, ("asset", 0usize), cx);
+    click(window, ("merge", 0usize), cx);
+
+    assert_eq!(count(window, "asset", cx), 1);
+    assert!(exists(window, "detail", cx));
+    assert_eq!(count(window, "file", cx), 2);
+}
