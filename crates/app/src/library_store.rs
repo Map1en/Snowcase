@@ -8,7 +8,9 @@ use gpui_kit::*;
 use snowcase_core::StoreError;
 use snowcase_core::ingest::names::CodePage;
 use snowcase_core::ingest::scan::read_root;
-use snowcase_core::library::{Library, Outcome, ScanReport, run};
+use snowcase_booth as booth;
+use snowcase_core::ItemId;
+use snowcase_core::library::{Library, Outcome, Picture, ScanReport, StorePage, run};
 use snowcase_core::snapshot::Snapshot;
 
 type Job = Box<dyn FnOnce(&mut Library) + Send>;
@@ -115,6 +117,27 @@ impl LibraryStore {
 
     pub fn progress(&self) -> &Progress {
         &self.background.progress
+    }
+
+    pub fn link_booth(&mut self, id: ItemId, booth_id: u64, cx: &mut Context<Self>) -> Task<Result<(), String>> {
+        let fetched = cx.background_spawn(async move { booth::fetch(booth_id) });
+        cx.spawn(async move |this, cx| {
+            let (item, image) = fetched.await?;
+            let page = StorePage {
+                external_id: item.id.to_string(),
+                name: item.name,
+                shop: item.shop,
+                url: item.url,
+            };
+            let picture = image.map(|image| Picture {
+                bytes: image.bytes,
+                mime: image.mime,
+            });
+            let written = this
+                .update(cx, |this, cx| this.change(cx, move |library| library.link_booth(id, &page, picture.as_ref())))
+                .map_err(|error| error.to_string())?;
+            written.await.ok_or_else(|| "the library could not be written".to_owned())
+        })
     }
 
     pub fn is_scanning(&self) -> bool {

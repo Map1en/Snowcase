@@ -4,7 +4,6 @@ use gpui_kit::component::input::Input;
 use gpui_kit::component::*;
 use gpui_kit::*;
 use snowcase_booth as booth;
-use snowcase_core::library::{Picture, StorePage};
 use snowcase_core::snapshot::Snapshot;
 use snowcase_core::ItemId;
 
@@ -26,27 +25,11 @@ impl LibraryView {
         };
         self.booth_status = Some(BoothStatus::Fetching);
         cx.notify();
-        let fetched = cx.background_spawn(async move { booth::fetch(booth_id) });
+        let linked = self.store.update(cx, |store, cx| store.link_booth(id, booth_id, cx));
         cx.spawn(async move |this, cx| {
-            let fetched = fetched.await;
+            let linked = linked.await;
             this.update(cx, |this, cx| {
-                match fetched {
-                    Ok((item, image)) => {
-                        this.booth_status = None;
-                        let page = StorePage {
-                            external_id: item.id.to_string(),
-                            name: item.name,
-                            shop: item.shop,
-                            url: item.url,
-                        };
-                        let picture = image.map(|image| Picture {
-                            bytes: image.bytes,
-                            mime: image.mime,
-                        });
-                        this.change(cx, move |library| library.link_booth(id, &page, picture.as_ref()));
-                    }
-                    Err(error) => this.booth_status = Some(BoothStatus::Failed(error)),
-                }
+                this.booth_status = linked.err().map(BoothStatus::Failed);
                 cx.notify();
             })
             .ok();
