@@ -65,12 +65,7 @@ impl Cache {
             .user_version;
         if version != 0 && version != VERSION {
             drop(conn);
-            for suffix in ["", "-wal", "-shm"] {
-                let file = dir.join(format!("{CACHE}{suffix}"));
-                if file.exists() {
-                    fs::remove_file(file)?;
-                }
-            }
+            Self::remove(dir)?;
             conn = SqliteConnection::establish(&url)?;
         }
         conn.batch_execute(&format!(
@@ -95,6 +90,16 @@ impl Cache {
              PRAGMA user_version = {VERSION};"
         ))?;
         Ok(Self { conn })
+    }
+
+    pub fn remove(dir: &Path) -> Result<()> {
+        for suffix in ["", "-wal", "-shm"] {
+            let file = dir.join(format!("{CACHE}{suffix}"));
+            if file.exists() {
+                fs::remove_file(file)?;
+            }
+        }
+        Ok(())
     }
 
     pub fn save_packages(&mut self, scanned: &[ScannedPackage]) -> Result<()> {

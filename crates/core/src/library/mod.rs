@@ -34,12 +34,21 @@ impl Library {
             store.create_folder(None, DEFAULT_FOLDER)?;
             catalog = store.load()?;
         }
-        let mut cache = Cache::open(dir)?;
+        let opened = Cache::open(dir).and_then(|mut cache| {
+            let packages = cache.load_packages()?;
+            Ok((cache, packages))
+        });
+        let (cache, packages) = match opened {
+            Ok(opened) => opened,
+            Err(_) => {
+                Cache::remove(dir)?;
+                (Cache::open(dir)?, Vec::new())
+            }
+        };
         let mut snapshot = Snapshot::new(catalog);
         snapshot.media_dir = dir.join(MEDIA);
         snapshot.packages = Arc::new(
-            cache
-                .load_packages()?
+            packages
                 .iter()
                 .map(|scanned| (scanned.key.clone(), Arc::new(PackageSummary::of(scanned))))
                 .collect(),

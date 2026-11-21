@@ -484,3 +484,15 @@ fn linking_a_booth_page_sets_title_shop_link_and_a_stored_cover() {
     assert_eq!(std::fs::read(&cover).unwrap(), b"jpeg bytes");
     assert_matches_a_full_reload(&library, dir.path());
 }
+
+#[test]
+fn a_broken_cache_is_rebuilt_and_the_library_still_opens() {
+    let (dir, library) = sample();
+    let titles_before: Vec<String> = titles(&library.query(&Filter::default(), SortKey::Name)).into_iter().map(str::to_owned).collect();
+    drop(library);
+    std::fs::write(dir.path().join("cache.db"), b"this is not a database").unwrap();
+
+    let library = Library::open(dir.path()).unwrap();
+
+    assert_eq!(titles(&library.query(&Filter::default(), SortKey::Name)), titles_before);
+}
