@@ -1,161 +1,29 @@
-[[avatar]]
-name = "Manuka"
-aliases = ["manuka", "マヌカ", "まぬか"]
-
-[[avatar]]
-name = "Kikyo"
-aliases = ["kikyo", "桔梗"]
-
-[[avatar]]
-name = "Karin"
-aliases = ["karin", "カリン"]
-
-[[avatar]]
-name = "Shinano"
-aliases = ["shinano", "しなの"]
-
-[[avatar]]
-name = "Mafuyu"
-aliases = ["mafuyu", "mahuyu", "まふゆ", "真冬"]
-
-[[avatar]]
-name = "Cian"
-aliases = ["cian", "シアン"]
-
-[[avatar]]
-name = "Kipfel"
-aliases = ["kipfel", "キプフェル"]
-
-[[avatar]]
-name = "Chiffon"
-aliases = ["chiffon", "シフォン"]
-
-[[avatar]]
-name = "Milfy"
-aliases = ["milfy", "ミルフィ"]
-
-[[avatar]]
-name = "Lime"
-aliases = ["lime", "ライム"]
-
-[[avatar]]
-name = "Rusk"
-aliases = ["rusk", "ラスク"]
-
-[[avatar]]
-name = "Plum"
-aliases = ["plum", "プラム"]
-
-[[avatar]]
-name = "Amanatsu"
-aliases = ["amanatsu", "あまなつ"]
-
-[[avatar]]
-name = "Lunalitt"
-aliases = ["lunalitt", "ルーナリット"]
-
-[[avatar]]
-name = "Shinra"
-aliases = ["shinra", "森羅"]
-
-[[avatar]]
-name = "Selestia"
-aliases = ["selestia"]
-
-[[avatar]]
-name = "Uzuki"
-aliases = ["uzuki"]
-
-[[avatar]]
-name = "Mizuki"
-aliases = ["mizuki"]
-
-[[avatar]]
-name = "Rindo"
-aliases = ["rindo"]
-
-[[avatar]]
-name = "Hakua"
-aliases = ["hakua"]
-
-[[avatar]]
-name = "Milltina"
-aliases = ["milltina"]
-
-[[avatar]]
-name = "Lapwing"
-aliases = ["lapwing"]
-
-[[avatar]]
-name = "Airi"
-aliases = ["airi"]
-
-[[avatar]]
-name = "Leefa"
-aliases = ["leefa"]
-
-[[avatar]]
-name = "Imeris"
-aliases = ["imeris"]
-
-[[avatar]]
-name = "Grus"
-aliases = ["grus"]
-
-[[avatar]]
-name = "Rurune"
-aliases = ["rurune"]
-
-[[avatar]]
-name = "Sephira"
-aliases = ["sephira"]
-
-[[avatar]]
-name = "Chocolat"
-aliases = ["chocolat"]
-
-[[avatar]]
-name = "Mamehinata"
-aliases = ["mamehinata"]
-
-[[avatar]]
-name = "Sapphy"
-aliases = ["sapphy"]
-
-[[avatar]]
-name = "Mamefriends"
-aliases = ["mamefriends"]
+avatars = [
+    "Airi", "Chiffon", "Chocolat", "Cian", "Grus", "Hakua", "Imeris", "Karin", "Kikyo", "Kipfel", "Lapwing",
+    "Leefa", "Lime", "Lunalitt", "Mafuyu", "Mamehinata", "Manuka", "Milfy", "Milltina", "Mizuki", "Plum",
+    "Rindo", "Rurune", "Rusk", "Sapphy", "Selestia", "Sephira", "Shinano", "Shinra", "Uzuki",
+]
 
 [[category]]
 name = "tool"
-words = ["tool", "tools", "setup", "deleter", "changer", "editor", "gui", "avatartools", "dynamicbone", "manager"]
+words = ["tool", "tools", "editor", "manager"]
 
 [[category]]
 name = "shader"
-words = ["shader", "シェーダー", "toon", "liltoon", "poiyomi", "poi", "uts2", "sunao"]
+words = ["shader", "toon"]
 
 [[category]]
 name = "gimmick"
-words = ["system", "gimmick", "ギミック", "particle", "パーティクル", "kiss", "dps", "afk"]
+words = ["system", "gimmick", "particle"]
 
 [[category]]
 name = "outfit"
-words = [
-    "outfit", "dress", "bikini", "swimsuit", "水着", "onepi", "ワンピ", "maid", "メイド", "sailor", "セーラー",
-    "furisode", "振袖", "pajama", "ぱじゃま", "roomwear", "部屋着", "heyagi", "knit", "school", "poncho",
-    "ポンチョ", "pantsu", "衣装", "costume", "lingerie", "cloth", "clothes", "shirt", "shirts", "uniform",
-    "制服", "apron", "エプロン", "skirt", "スカート", "裙子", "衣服",
-]
+words = ["outfit", "dress", "bikini", "swimsuit", "maid", "sailor", "uniform", "costume", "skirt", "shirt", "coat", "poncho", "衣装"]
 
 [[category]]
 name = "accessory"
-words = [
-    "halo", "heiro", "ヘイロー", "earring", "earrings", "ピアス", "イヤリング", "choker", "チョーカー",
-    "hairpin", "ヘアピン", "glasses", "megane", "メガネ", "ring", "rings", "bracelet", "headphones",
-    "muffler", "マフラー", "ribbon", "リボン", "nail", "ネイル", "accessory", "accessories", "acc", "hat",
-    "boushi", "帽子", "ベレー帽",
-]
+words = ["accessory", "accessories", "earring", "earrings", "choker", "glasses", "ring", "rings", "halo", "ribbon", "hat"]
 
 [[category]]
 name = "hair"
-words = ["hair", "hairstyle", "髪型", "发型", "bob", "ぽに", "ポニー", "三つ編み", "mittsuami", "エクステ", "ウィッグ"]
+words = ["hair", "hairstyle"]

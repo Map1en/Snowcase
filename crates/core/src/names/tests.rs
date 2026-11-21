@@ -117,10 +117,8 @@ fn keys_that_are_too_generic_or_only_an_avatar_are_not_offered() {
         "Shinano",
         "kipfel",
         "Mafuyu_v1.0.6",
-        "まふゆ",
         "1.zip",
         "2.zip",
-        "白真冬.zip",
         "kipfel_ribbon_texture.zip",
     ] {
         assert_eq!(name_key(name), None, "{name}");

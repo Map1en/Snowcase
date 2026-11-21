@@ -4,7 +4,7 @@ use encoding_rs::{BIG5, EUC_KR, Encoding, GBK, SHIFT_JIS};
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization;
 
-use crate::recognize::avatar_aliases;
+use crate::recognize::is_avatar_word;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodePage {
@@ -189,18 +189,11 @@ pub fn name_key(name: &str) -> Option<String> {
         }
         for word in words(piece) {
             let lower = word.to_lowercase();
-            if ROLE_WORDS.contains(&lower.as_str()) || avatar_aliases().any(|alias| alias == lower) {
+            if ROLE_WORDS.contains(&lower.as_str()) || is_avatar_word(&lower) {
                 stripped = true;
                 continue;
             }
-            let mut rest = lower;
-            for avatar in avatar_aliases().filter(|avatar| !avatar.is_ascii()) {
-                if rest.contains(avatar) {
-                    rest = rest.replace(avatar, "");
-                    stripped = true;
-                }
-            }
-            key.push_str(&rest);
+            key.push_str(&lower);
         }
     }
     let weight: usize = key.chars().map(|c| if c.is_ascii() { 1 } else { 2 }).sum();

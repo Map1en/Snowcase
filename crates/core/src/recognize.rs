@@ -5,31 +5,27 @@ use serde::Deserialize;
 use crate::names::{plain_text, tokens};
 
 #[derive(Deserialize)]
-struct Entry {
+struct Category {
     name: String,
-    #[serde(default)]
-    aliases: Vec<String>,
-    #[serde(default)]
     words: Vec<String>,
 }
 
 #[derive(Deserialize)]
 struct Vocabulary {
-    avatar: Vec<Entry>,
-    category: Vec<Entry>,
+    avatars: Vec<String>,
+    category: Vec<Category>,
 }
 
 static VOCABULARY: LazyLock<Vocabulary> =
     LazyLock::new(|| toml::from_str(include_str!("vocabulary.toml")).expect("the built-in vocabulary parses"));
+static AVATAR_WORDS: LazyLock<Vec<String>> =
+    LazyLock::new(|| VOCABULARY.avatars.iter().map(|name| name.to_lowercase()).collect());
 
 pub const AVATAR: &str = "avatar";
 const GLUED_WORD: usize = 6;
 
-pub fn avatar_aliases() -> impl Iterator<Item = &'static str> {
-    VOCABULARY
-        .avatar
-        .iter()
-        .flat_map(|avatar| avatar.aliases.iter().map(String::as_str))
+pub fn is_avatar_word(word: &str) -> bool {
+    AVATAR_WORDS.iter().any(|avatar| avatar == word)
 }
 
 pub fn categories() -> impl Iterator<Item = &'static str> {
@@ -65,10 +61,11 @@ impl Name {
 
     fn avatars(&self) -> impl Iterator<Item = &'static str> + '_ {
         VOCABULARY
-            .avatar
+            .avatars
             .iter()
-            .filter(|avatar| avatar.aliases.iter().any(|alias| self.mentions(alias)))
-            .map(|avatar| avatar.name.as_str())
+            .zip(AVATAR_WORDS.iter())
+            .filter(|(_, word)| self.tokens.contains(word))
+            .map(|(name, _)| name.as_str())
     }
 
     fn category(&self) -> Option<&'static str> {
@@ -85,7 +82,7 @@ impl Name {
             && self
                 .tokens
                 .iter()
-                .all(|token| avatar_aliases().any(|alias| alias == token))
+                .all(|token| is_avatar_word(token))
     }
 }
 
