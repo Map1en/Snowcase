@@ -118,3 +118,9 @@ pub fn clear(window: AnyWindowHandle, select: &'static str, cx: &mut TestAppCont
         .unwrap();
     settle(window, cx);
 }
+
+pub fn activate(window: AnyWindowHandle, cx: &mut TestAppContext) {
+    cx.update_window(window, |_, window, _| window.activate_window())
+        .unwrap();
+    settle(window, cx);
+}

@@ -253,3 +253,31 @@ fn every_rescan_keeps_the_snapshot_equal_to_a_full_reload() {
 
     assert_matches_a_full_reload(&fx.library, fx._data.path());
 }
+
+#[test]
+fn scanning_every_root_picks_up_new_files_and_skips_a_root_that_is_not_there() {
+    let mut fx = fixture();
+    outfit(fx.root());
+    fx.scan();
+    let unplugged = tempfile::tempdir().unwrap();
+    write(unplugged.path(), "Gloves.unitypackage", PACKAGE);
+    fx.library.scan_root(unplugged.path(), CodePage::SimplifiedChinese).unwrap();
+    let unplugged_path = unplugged.path().to_path_buf();
+    drop(unplugged);
+    write(fx.root(), "TENSHI_CHOKER.rar", b"rar");
+    write(fx.root(), "Hair.unitypackage", PACKAGE);
+
+    let report = fx.library.scan_roots(CodePage::SimplifiedChinese).unwrap();
+
+    assert_eq!((report.new_items, report.missing), (1, 0), "the missing root's files are not marked missing");
+    assert_eq!(report.unsupported, [fx.root().join("TENSHI_CHOKER.rar").to_string_lossy()]);
+    assert!(!unplugged_path.exists());
+    let states: Vec<LocationState> = fx
+        .library
+        .items()
+        .iter()
+        .flat_map(|item| fx.library.files(item.id))
+        .map(|view| view.locations[0].state)
+        .collect();
+    assert!(states.iter().all(|state| *state == LocationState::Present));
+}

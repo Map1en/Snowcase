@@ -33,7 +33,34 @@ struct Known {
     present: bool,
 }
 
+impl ScanReport {
+    fn absorb(&mut self, root: &Path, other: ScanReport) {
+        let full = |rel: String| root.join(rel).to_string_lossy().into_owned();
+        self.new_items += other.new_items;
+        self.new_files += other.new_files;
+        self.moved += other.moved;
+        self.missing += other.missing;
+        self.removed_copies += other.removed_copies;
+        self.unity_projects.extend(other.unity_projects.into_iter().map(full));
+        self.unsupported.extend(other.unsupported.into_iter().map(full));
+        self.errors.extend(other.errors);
+    }
+}
+
 impl Library {
+    pub fn scan_roots(&mut self, code_page: CodePage) -> Result<ScanReport, StoreError> {
+        let roots: Vec<String> = self.snapshot.catalog.roots.iter().map(|root| root.path.clone()).collect();
+        let mut report = ScanReport::default();
+        for root in roots {
+            let root = Path::new(&root);
+            if root.is_dir() {
+                let scanned = self.scan_root(root, code_page)?;
+                report.absorb(root, scanned);
+            }
+        }
+        Ok(report)
+    }
+
     pub fn scan_root(&mut self, root: &Path, code_page: CodePage) -> Result<ScanReport, StoreError> {
         let root_text = root
             .to_str()

@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
+use std::time::{Duration, Instant};
 
 use gpui_kit::component::button::*;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
@@ -24,6 +25,8 @@ const GRID_PADDING: f32 = 16.;
 const NAV_WIDTH: f32 = 220.;
 const DETAIL_WIDTH: f32 = 460.;
 const SUGGESTIONS: usize = 6;
+const RESCAN_AFTER: Duration = Duration::from_secs(60);
+const UNSUPPORTED_LISTED: usize = 20;
 const TAG_SEPARATORS: [char; 3] = [',', '，', '、'];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,7 +72,9 @@ pub struct LibraryView {
     selects: Vec<(FilterField, Choices)>,
     pending_imports: usize,
     last_failures: usize,
-    unsupported: usize,
+    scanning: bool,
+    last_scan: Option<Instant>,
+    unsupported: Vec<String>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -87,6 +92,13 @@ impl LibraryView {
             cx.observe_in(&store, window, |this, _, window, cx| {
                 this.refresh_choices(window, cx);
                 this.refresh(cx);
+            }),
+            cx.observe_window_activation(window, |this, window, cx| {
+                let now = cx.background_executor().now();
+                let due = this.last_scan.is_none_or(|last| now.duration_since(last) >= RESCAN_AFTER);
+                if window.is_window_active() && due {
+                    this.scan(None, cx);
+                }
             }),
             cx.observe_global_in::<Locale>(window, |this, window, cx| {
                 this.apply_locale(window, cx);
@@ -159,12 +171,15 @@ impl LibraryView {
             selects,
             pending_imports: 0,
             last_failures: 0,
-            unsupported: 0,
+            scanning: false,
+            last_scan: None,
+            unsupported: Vec::new(),
             _subscriptions: subscriptions,
         };
         view.apply_locale(window, cx);
         view.refresh_choices(window, cx);
         view.refresh(cx);
+        view.scan(None, cx);
         view
     }
 
@@ -280,7 +295,7 @@ impl LibraryView {
             if let Ok(Ok(Some(paths))) = picked.await {
                 this.update(cx, |this, cx| {
                     for path in paths {
-                        this.scan(path, cx);
+                        this.scan(Some(path), cx);
                     }
                 })
                 .ok();
@@ -289,22 +304,32 @@ impl LibraryView {
         .detach();
     }
 
-    fn scan(&mut self, root: PathBuf, cx: &mut Context<Self>) {
+    fn scan(&mut self, new_root: Option<PathBuf>, cx: &mut Context<Self>) {
+        let has_roots = self.store.read(cx).snapshot().is_some_and(|library| !library.roots().is_empty());
+        if self.scanning || (new_root.is_none() && !has_roots) {
+            return;
+        }
+        self.scanning = true;
+        cx.notify();
         let code_page = code_page(i18n::system_locale());
         let scanned = self.store.update(cx, |store, cx| {
             store.change(cx, move |library| {
-                library
-                    .scan_root(&root, code_page)
-                    .map(|report| report.unsupported.len())
+                if let Some(root) = &new_root {
+                    library.scan_root(root, code_page)?;
+                }
+                library.scan_roots(code_page).map(|report| report.unsupported)
             })
         });
         cx.spawn(async move |this, cx| {
             let unsupported = scanned.await;
             this.update(cx, |this, cx| {
+                this.scanning = false;
+                this.last_scan = Some(cx.background_executor().now());
                 if let Some(unsupported) = unsupported {
                     this.unsupported = unsupported;
                 }
                 this.store.update(cx, |store, cx| store.start_background(cx));
+                cx.notify();
             })
             .ok();
         })
@@ -448,7 +473,7 @@ impl LibraryView {
             .border_color(theme.border)
             .bg(theme.sidebar);
 
-        column = column.child(filter_group(tr!(cx, "nav.library"), None).child(self.nav_item(
+        column = column.child(filter_group(tr!(cx, "nav.library"), []).child(self.nav_item(
             "scope-all".into(),
             tr!(cx, "scope.all"),
             0,
@@ -463,7 +488,7 @@ impl LibraryView {
             .icon(IconName::Plus)
             .tooltip(tr!(cx, "folder.new"))
             .on_click(cx.listener(|this, _, _, cx| this.add_folder(cx)));
-        let mut folders = filter_group(tr!(cx, "item.folders"), Some(add));
+        let mut folders = filter_group(tr!(cx, "item.folders"), [add]);
         for row in library.folder_tree() {
             folders = folders.child(self.nav_item(
                 format!("scope-folder-{}", row.folder.id.0).into(),
@@ -476,13 +501,21 @@ impl LibraryView {
         }
         column = column.child(folders);
 
+        let rescan = Button::new("rescan")
+            .ghost()
+            .compact()
+            .icon(IconName::RefreshCw)
+            .loading(self.scanning)
+            .tooltip(tr!(cx, "root.rescan"))
+            .on_click(cx.listener(|this, _, _, cx| this.scan(None, cx)));
         let add = Button::new("add-root")
             .ghost()
             .compact()
             .icon(IconName::Plus)
             .tooltip(tr!(cx, "root.add"))
             .on_click(cx.listener(|this, _, _, cx| this.pick_root(cx)));
-        let mut roots = filter_group(tr!(cx, "root.title"), Some(add));
+        let actions = if library.roots().is_empty() { vec![add] } else { vec![rescan, add] };
+        let mut roots = filter_group(tr!(cx, "root.title"), actions);
         for (root, count) in library.roots() {
             roots = roots.child(self.nav_item(
                 format!("scope-root-{}", root.id.0).into(),
@@ -575,14 +608,21 @@ impl LibraryView {
         let theme = cx.theme();
         let progress = store.progress();
         let mut notes: Vec<SharedString> = Vec::new();
-        if self.pending_imports > 0 || store.is_busy() {
+        if self.scanning {
+            notes.push(tr!(cx, "status.scanning"));
+        } else if self.pending_imports > 0 || store.is_busy() {
             notes.push(tr!(cx, "status.adding"));
         } else if self.last_failures > 0 {
             notes.push(tr!(cx, "status.failures", count = self.last_failures));
         }
-        if self.unsupported > 0 {
-            notes.push(tr!(cx, "status.unsupported", count = self.unsupported));
-        }
+        let unsupported = (!self.unsupported.is_empty()).then(|| {
+            let listed: Vec<&str> = self.unsupported.iter().take(UNSUPPORTED_LISTED).map(String::as_str).collect();
+            Button::new("unsupported")
+                .ghost()
+                .xsmall()
+                .label(tr!(cx, "status.unsupported", count = self.unsupported.len()))
+                .tooltip(listed.join("\n"))
+        });
         let background = progress.running.then(|| {
             let mut label = tr!(cx, "status.background", done = progress.done, total = progress.total).to_string();
             if progress.paused {
@@ -633,6 +673,7 @@ impl LibraryView {
             .text_color(theme.muted_foreground)
             .children(background)
             .children(notes.into_iter().map(|note| div().child(note)))
+            .children(unsupported)
             .child(div().flex_1())
             .children(store.error().map(|error| {
                 div()
@@ -1097,15 +1138,15 @@ fn hit_label(hit: &Hit, cx: &App) -> SharedString {
     }
 }
 
-fn filter_group(label: SharedString, action: Option<Button>) -> Div {
+fn filter_group(label: SharedString, actions: impl IntoIterator<Item = Button>) -> Div {
     v_flex().gap_0p5().child(
         h_flex()
             .justify_between()
             .items_center()
             .px_2()
             .pb_1()
-            .child(div().text_xs().font_semibold().opacity(0.6).child(label))
-            .children(action),
+            .child(div().flex_1().text_xs().font_semibold().opacity(0.6).child(label))
+            .children(actions),
     )
 }
 

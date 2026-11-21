@@ -2,7 +2,7 @@ use gpui_kit::{AnyWindowHandle, AppContext, Entity, TestAppContext};
 use snowcase_core::FacetKey;
 use snowcase_core::library::{Filter, Library, Scope, SortKey, item_node};
 use snowcase_testing::fixtures::{self, Fixture};
-use snowcase_testing::ui::{choose, clear, click, count, drop_paths, exists, open, press, type_into};
+use snowcase_testing::ui::{activate, choose, clear, click, count, drop_paths, exists, open, press, type_into};
 
 use super::LibraryView;
 use crate::i18n;
@@ -265,4 +265,48 @@ fn items_from_the_same_package_folder_can_be_merged_from_the_detail(cx: &mut Tes
     assert_eq!(count(window, "asset", cx), 1);
     assert!(exists(window, "detail", cx));
     assert_eq!(count(window, "file", cx), 2);
+}
+
+#[gpui_kit::test]
+fn opening_the_library_scans_its_folders_and_the_button_scans_again(cx: &mut TestAppContext) {
+    let (Fixture { library, dir: _dir }, assets) = fixtures::scanned(2);
+    std::fs::write(assets.path().join("Added.unitypackage"), fixtures::unitypackage(&["Assets/Shop/Added/Added.prefab"])).unwrap();
+    let (window, _) = open_library(library, cx);
+
+    assert_eq!(count(window, "asset", cx), 3, "files added while Snowcase was closed show up");
+    std::fs::write(assets.path().join("Later.unitypackage"), fixtures::unitypackage(&["Assets/Shop/Later/Later.prefab"])).unwrap();
+    click(window, "rescan", cx);
+    assert_eq!(count(window, "asset", cx), 4);
+}
+
+#[gpui_kit::test]
+fn coming_back_to_the_window_rescans_at_most_once_a_minute(cx: &mut TestAppContext) {
+    let (Fixture { library, dir: _dir }, assets) = fixtures::scanned(1);
+    let (window, _) = open_library(library, cx);
+    let (other, _) = snowcase_testing::ui::open(cx, |_, cx| cx.new(|_| gpui_kit::Empty));
+    let come_back = |cx: &mut TestAppContext| {
+        activate(other, cx);
+        activate(window, cx);
+    };
+    assert_eq!(count(window, "asset", cx), 1);
+    std::fs::write(assets.path().join("New.unitypackage"), fixtures::unitypackage(&["Assets/Shop/New/New.prefab"])).unwrap();
+
+    come_back(cx);
+    assert_eq!(count(window, "asset", cx), 1, "scanned less than a minute ago");
+
+    cx.background_executor.advance_clock(std::time::Duration::from_secs(61));
+    come_back(cx);
+    assert_eq!(count(window, "asset", cx), 2);
+}
+
+#[gpui_kit::test]
+fn unsupported_archives_are_counted_in_the_status_bar(cx: &mut TestAppContext) {
+    let (Fixture { library, dir: _dir }, assets) = fixtures::scanned(1);
+    std::fs::write(assets.path().join("TENSHI_CHOKER.rar"), b"rar").unwrap();
+    let (window, view) = open_library(library, cx);
+
+    assert!(exists(window, "unsupported", cx));
+    view.read_with(cx, |view, _| {
+        assert_eq!(view.unsupported, [assets.path().join("TENSHI_CHOKER.rar").to_string_lossy()]);
+    });
 }
