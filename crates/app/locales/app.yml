@@ -353,3 +353,45 @@ action.cancel:
   zh-TW: 取消
   ja: キャンセル
   ko: 취소
+category.avatar:
+  en: Avatar
+  zh-CN: 本体
+  zh-TW: 本體
+  ja: アバター本体
+  ko: 아바타
+category.outfit:
+  en: Outfit
+  zh-CN: 衣服
+  zh-TW: 衣服
+  ja: 衣装
+  ko: 의상
+category.hair:
+  en: Hair
+  zh-CN: 头发
+  zh-TW: 頭髮
+  ja: 髪型
+  ko: 헤어
+category.accessory:
+  en: Accessory
+  zh-CN: 配件
+  zh-TW: 配件
+  ja: アクセサリー
+  ko: 액세서리
+category.shader:
+  en: Shader
+  zh-CN: 着色器
+  zh-TW: 著色器
+  ja: シェーダー
+  ko: 셰이더
+category.gimmick:
+  en: Gimmick
+  zh-CN: 机关
+  zh-TW: 機關
+  ja: ギミック
+  ko: 기믹
+category.tool:
+  en: Tool
+  zh-CN: 工具
+  zh-TW: 工具
+  ja: ツール
+  ko: 도구

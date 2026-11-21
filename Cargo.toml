@@ -31,3 +31,5 @@ regex = "1.13"
 unicode-normalization = "0.1"
 blake3 = "1.8"
 crc32fast = "1.5"
+toml = { version = "0.9", default-features = false, features = ["parse", "serde"] }
+serde = { version = "1", features = ["derive"] }

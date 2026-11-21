@@ -12,6 +12,7 @@ use snowcase_core::library::{
     shown_name,
 };
 use snowcase_core::names::CodePage;
+use snowcase_core::recognize::categories;
 use snowcase_core::{FacetKey, FileKind, ItemId, LocationState, StoreError};
 
 use crate::i18n::{self, Locale, tr};
@@ -194,19 +195,22 @@ impl LibraryView {
         let Some(library) = self.store.read(cx).snapshot() else {
             return;
         };
-        let counted = |values: Vec<(String, usize)>| -> Vec<Choice> {
+        let counted = |key: Option<FacetKey>, values: Vec<(String, usize)>| -> Vec<Choice> {
             values
                 .into_iter()
-                .map(|(value, count)| Choice {
-                    title: format!("{value}  {count}").into(),
-                    value,
+                .map(|(value, count)| {
+                    let label = key.map_or_else(|| value.clone(), |key| attribute_label(key, &value, cx));
+                    Choice {
+                        title: format!("{label}  {count}").into(),
+                        value,
+                    }
                 })
                 .collect()
         };
         let choices: Vec<(FilterField, Vec<Choice>)> = vec![
-            (FilterField::Category, counted(library.values(FacetKey::Category))),
-            (FilterField::Target, counted(library.values(FacetKey::Target))),
-            (FilterField::Shop, counted(library.shops())),
+            (FilterField::Category, counted(Some(FacetKey::Category), library.values(FacetKey::Category))),
+            (FilterField::Target, counted(Some(FacetKey::Target), library.values(FacetKey::Target))),
+            (FilterField::Shop, counted(None, library.shops())),
             (
                 FilterField::Tag,
                 library
@@ -702,7 +706,10 @@ impl LibraryView {
         };
         let id = item.id;
         let facts = library.facts(id).cloned().unwrap_or_default();
-        let meta: Vec<String> = [facts.attribute(FacetKey::Category).map(str::to_owned), facts.shop.clone()]
+        let meta: Vec<String> = [
+            facts.attribute(FacetKey::Category).map(|value| attribute_label(FacetKey::Category, value, cx)),
+            facts.shop.clone(),
+        ]
             .into_iter()
             .flatten()
             .collect();
@@ -823,10 +830,7 @@ impl LibraryView {
         let facts = library.facts(id).cloned().unwrap_or_default();
         let mut chips = h_flex().flex_wrap().gap_1();
         for (ix, (key, value)) in facts.attributes.iter().cloned().enumerate() {
-            let label = match key {
-                FacetKey::Version => format!("v{value}"),
-                _ => value.clone(),
-            };
+            let label = attribute_label(key, &value, cx);
             chips = chips.child(
                 removable(format!("remove-attribute-{ix}"), label, true, cx).on_click(cx.listener(
                     move |this, _, _, cx| {
@@ -1028,6 +1032,16 @@ fn code_page(locale: &str) -> CodePage {
         "zh-TW" => CodePage::TraditionalChinese,
         "ko" => CodePage::Korean,
         _ => CodePage::Other,
+    }
+}
+
+fn attribute_label(key: FacetKey, value: &str, cx: &App) -> String {
+    match key {
+        FacetKey::Version => format!("v{value}"),
+        FacetKey::Category if categories().any(|known| known == value) => {
+            rust_i18n::t!(format!("category.{value}"), locale = i18n::locale(cx)).into_owned()
+        }
+        _ => value.to_owned(),
     }
 }
 

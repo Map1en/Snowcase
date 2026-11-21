@@ -4,6 +4,8 @@ use encoding_rs::{BIG5, EUC_KR, Encoding, GBK, SHIFT_JIS};
 use regex::Regex;
 use unicode_normalization::UnicodeNormalization;
 
+use crate::recognize::avatar_aliases;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodePage {
     Japanese,
@@ -69,14 +71,6 @@ const ROLE_WORDS: &[&str] = &[
     "material", "materials", "prefab", "prefabs", "texture", "textures", "tex", "fullset", "full", "psd",
     "all", "for",
 ];
-const AVATARS: &[&str] = &[
-    "manuka", "kikyo", "karin", "shinano", "mafuyu", "mahuyu", "cian", "kipfel", "chiffon", "milfy",
-    "lime", "rusk", "selestia", "uzuki", "mizuki", "rindo", "hakua", "milltina", "lapwing", "airi",
-    "leefa", "imeris", "grus", "rurune", "sephira", "chocolat", "mamehinata", "shinra", "sapphy",
-    "mamefriends", "マヌカ", "桔梗", "カリン", "しなの", "まふゆ", "真冬", "シアン", "キプフェル",
-    "シフォン", "ミルフィ", "ライム", "ラスク", "森羅",
-];
-
 fn base_name(name: &str) -> String {
     let name: String = name.nfkc().collect();
     let name = EXTENSIONS.replace(&name, "");
@@ -167,6 +161,23 @@ fn is_separator(c: char) -> bool {
     c.is_whitespace() || c.is_ascii_punctuation() || "【】「」『』・".contains(c)
 }
 
+pub(crate) fn plain_text(name: &str) -> String {
+    without_versions(&base_name(name)).to_lowercase()
+}
+
+pub(crate) fn tokens(name: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    for piece in without_versions(&base_name(name)).split(is_separator).filter(|piece| !piece.is_empty()) {
+        let lower = piece.to_lowercase();
+        let words = words(piece);
+        if words.len() > 1 {
+            tokens.push(lower);
+        }
+        tokens.extend(words.into_iter().map(|word| word.to_lowercase()));
+    }
+    tokens
+}
+
 pub fn name_key(name: &str) -> Option<String> {
     let name = without_versions(&base_name(name));
     let mut stripped = false;
@@ -178,12 +189,12 @@ pub fn name_key(name: &str) -> Option<String> {
         }
         for word in words(piece) {
             let lower = word.to_lowercase();
-            if ROLE_WORDS.contains(&lower.as_str()) || AVATARS.contains(&lower.as_str()) {
+            if ROLE_WORDS.contains(&lower.as_str()) || avatar_aliases().any(|alias| alias == lower) {
                 stripped = true;
                 continue;
             }
             let mut rest = lower;
-            for avatar in AVATARS.iter().filter(|avatar| !avatar.is_ascii()) {
+            for avatar in avatar_aliases().filter(|avatar| !avatar.is_ascii()) {
                 if rest.contains(avatar) {
                     rest = rest.replace(avatar, "");
                     stripped = true;

@@ -124,10 +124,30 @@ fn the_first_scan_groups_files_into_items_and_reports_what_it_skipped() {
         inner_path: None,
     };
     assert_eq!(fx.library.facets(&node, FacetKey::Version)[0].value, "1.0");
+    let values = |key| -> Vec<String> {
+        fx.library.facets(&crate::library::item_node(item), key).into_iter().map(|facet| facet.value).collect()
+    };
+    assert_eq!(values(FacetKey::Category), ["outfit"]);
     assert_eq!(
         fx.library.location_path(zip.locations[0]),
         fx.root().join("Outfit_v1.0.zip").to_string_lossy()
     );
+}
+
+#[test]
+fn a_new_item_is_recognized_from_its_title_and_file_names() {
+    let mut fx = fixture();
+    write(fx.root(), "Plumery_Bikini_Mafuyu/Plumery_Bikini_Cian.unitypackage", PACKAGE);
+    write(fx.root(), "Plumery_Bikini_Mafuyu/Plumery_Bikini_Mafuyu.unitypackage", TEXTURE);
+
+    fx.scan();
+
+    let item = crate::library::item_node(fx.only_item());
+    let values = |key| -> Vec<String> { fx.library.facets(&item, key).into_iter().map(|facet| facet.value).collect() };
+    assert_eq!(values(FacetKey::Category), ["outfit"]);
+    let mut targets = values(FacetKey::Target);
+    targets.sort();
+    assert_eq!(targets, ["Cian", "Mafuyu"]);
 }
 
 #[test]

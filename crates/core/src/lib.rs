@@ -1,6 +1,7 @@
 pub mod group;
 pub mod library;
 pub mod names;
+pub mod recognize;
 pub mod scan;
 
 pub use snowcase_formats::FileKind;
