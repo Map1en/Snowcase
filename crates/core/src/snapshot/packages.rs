@@ -68,11 +68,7 @@ impl PackageSummary {
 
 impl Snapshot {
     pub(crate) fn fingerprint(&self, blob: BlobId) -> Option<&str> {
-        self.catalog
-            .blobs
-            .iter()
-            .find(|candidate| candidate.id == blob)
-            .and_then(|blob| blob.fingerprint.as_deref())
+        self.blob(blob).and_then(|blob| blob.fingerprint.as_deref())
     }
 
     pub(crate) fn package_key(&self, blob: BlobId, member: &str) -> Option<PackageKey> {
@@ -91,11 +87,9 @@ impl Snapshot {
         .map(Arc::as_ref)
     }
 
-    fn package_roots(&self, id: ItemId) -> HashSet<&str> {
-        self.catalog
-            .files
+    pub(crate) fn package_roots(&self, id: ItemId) -> HashSet<&str> {
+        self.item_files(id)
             .iter()
-            .filter(|file| file.item_id == id)
             .flat_map(|file| {
                 let inside = self.packages_in(file.blob_id).into_iter().map(|(_, summary)| summary);
                 self.package_of(file).into_iter().chain(inside).collect::<Vec<_>>()
@@ -111,22 +105,25 @@ impl Snapshot {
         }
         let version = |item: ItemId| self.facts.get(&item).and_then(|facts| facts.attribute(FacetKey::Version));
         let mine = version(id);
-        self.catalog
-            .items
+        let mut others: Vec<ItemId> = roots
             .iter()
-            .map(|item| item.id)
+            .filter_map(|root| self.index.roots.get(*root))
+            .flatten()
+            .copied()
             .filter(|other| *other != id)
             .filter(|other| match (mine, version(*other)) {
                 (Some(a), Some(b)) => a == b,
                 _ => true,
             })
-            .filter(|other| !self.package_roots(*other).is_disjoint(&roots))
-            .collect()
+            .collect();
+        others.sort();
+        others.dedup();
+        others
     }
 
     pub(crate) fn shop_from_packages(&self, id: ItemId) -> Option<String> {
         let mut shops: HashMap<&str, usize> = HashMap::new();
-        for file in self.catalog.files.iter().filter(|file| file.item_id == id) {
+        for file in self.item_files(id) {
             let inside = self.packages_in(file.blob_id).into_iter().map(|(_, summary)| summary);
             for summary in self.package_of(file).into_iter().chain(inside) {
                 if let Some(shop) = &summary.shop {
@@ -141,16 +138,11 @@ impl Snapshot {
     }
 
     pub fn packages_in(&self, blob: BlobId) -> Vec<(&str, &PackageSummary)> {
-        let Some(fingerprint) = self.fingerprint(blob) else {
-            return Vec::new();
-        };
-        let mut found: Vec<(&str, &PackageSummary)> = self
-            .packages
-            .iter()
-            .filter(|(key, _)| key.fingerprint == fingerprint && !key.member.is_empty())
-            .map(|(key, summary)| (key.member.as_str(), summary.as_ref()))
-            .collect();
-        found.sort_by_key(|(member, _)| *member);
-        found
+        self.fingerprint(blob)
+            .and_then(|fingerprint| self.index.members.get(fingerprint))
+            .into_iter()
+            .flatten()
+            .map(|(member, summary)| (member.as_str(), summary.as_ref()))
+            .collect()
     }
 }

@@ -2,12 +2,13 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use snowcase_store::{Blob, BlobId, BlobLocation, Catalog, Facet, FacetKey, FacetNode, FacetOrigin, Folder, FolderId, Item, ItemFile, ItemId, PackageKey, Root, RootId, StoreKind, Tag, TagId};
+use snowcase_store::{Blob, BlobId, BlobLocation, Catalog, Facet, FacetKey, FacetNode, FacetOrigin, Folder, FolderId, Item, ItemFile, ItemId, NodeTag, PackageKey, Root, RootId, StoreKind, Tag};
 
 use facts::facts_of;
 
 mod facts;
 mod hints;
+mod index;
 mod packages;
 mod query;
 
@@ -75,6 +76,7 @@ pub struct Snapshot {
     pub(crate) facts: HashMap<ItemId, ItemFacts>,
     pub(crate) packages: Arc<HashMap<PackageKey, Arc<PackageSummary>>>,
     pub(crate) media_dir: PathBuf,
+    index: index::Index,
 }
 
 impl Snapshot {
@@ -85,6 +87,7 @@ impl Snapshot {
             facts,
             packages: Arc::default(),
             media_dir: PathBuf::new(),
+            index: index::Index::default(),
         }
     }
 
@@ -115,14 +118,11 @@ impl Snapshot {
         self.facts.retain(|id, _| !ids.contains(id));
         self.facts
             .extend(facts_of(&self.catalog, |id| ids.contains(&id)));
+        self.reindex();
     }
 
     pub fn items(&self) -> &[Item] {
         &self.catalog.items
-    }
-
-    pub fn item(&self, id: ItemId) -> Option<&Item> {
-        self.catalog.items.iter().find(|item| item.id == id)
     }
 
     pub fn facts(&self, id: ItemId) -> Option<&ItemFacts> {
@@ -143,16 +143,19 @@ impl Snapshot {
             .and_then(|source| source.url.as_deref())
     }
 
-    fn tag(&self, id: TagId) -> Option<&Tag> {
-        self.catalog.tags.iter().find(|tag| tag.id == id)
+    pub(crate) fn node_tags_of(&self, id: ItemId) -> impl Iterator<Item = &NodeTag> {
+        self.index
+            .node_tags
+            .get(&id)
+            .into_iter()
+            .flatten()
+            .map(|ix| &self.catalog.node_tags[*ix])
     }
 
     pub fn tags_of(&self, id: ItemId) -> Vec<&Tag> {
         let mut tags: Vec<&Tag> = self
-            .catalog
-            .node_tags
-            .iter()
-            .filter(|link| link.item_id == id && link.blob_id.is_none())
+            .node_tags_of(id)
+            .filter(|link| link.blob_id.is_none())
             .filter_map(|link| self.tag(link.tag_id))
             .collect();
         tags.sort_by_key(|tag| tag.id);
@@ -160,10 +163,8 @@ impl Snapshot {
     }
 
     pub fn file_tags(&self, id: ItemId, blob: BlobId) -> Vec<&Tag> {
-        self.catalog
-            .node_tags
-            .iter()
-            .filter(|link| link.item_id == id && link.blob_id == Some(blob))
+        self.node_tags_of(id)
+            .filter(|link| link.blob_id == Some(blob))
             .filter_map(|link| self.tag(link.tag_id))
             .collect()
     }
@@ -225,20 +226,21 @@ impl Snapshot {
     }
 
     pub fn files(&self, id: ItemId) -> Vec<FileView<'_>> {
-        let catalog = &self.catalog;
-        let mut files: Vec<FileView<'_>> = catalog
-            .files
+        let mut files: Vec<FileView<'_>> = self
+            .item_files(id)
             .iter()
-            .filter(|file| file.item_id == id)
             .filter_map(|file| {
-                let blob = catalog.blobs.iter().find(|blob| blob.id == file.blob_id)?;
+                let blob = self.blob(file.blob_id)?;
                 Some(FileView {
                     file,
                     blob,
-                    locations: catalog
+                    locations: self
+                        .index
                         .locations
-                        .iter()
-                        .filter(|location| location.blob_id == blob.id)
+                        .get(&blob.id)
+                        .into_iter()
+                        .flatten()
+                        .map(|ix| &self.catalog.locations[*ix])
                         .collect(),
                 })
             })
@@ -298,13 +300,7 @@ impl Snapshot {
             .collect();
         self.items_in_root(root)
             .into_iter()
-            .filter(|id| {
-                catalog
-                    .files
-                    .iter()
-                    .filter(|file| file.item_id == *id)
-                    .all(|file| !elsewhere.contains(&file.blob_id))
-            })
+            .filter(|id| self.item_files(*id).iter().all(|file| !elsewhere.contains(&file.blob_id)))
             .count()
     }
 }

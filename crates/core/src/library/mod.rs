@@ -47,7 +47,10 @@ impl Library {
         Ok(Self {
             store,
             cache,
-            snapshot: Arc::new(snapshot),
+            snapshot: Arc::new({
+                snapshot.reindex();
+                snapshot
+            }),
             archives: ArchiveCache::default(),
         })
     }

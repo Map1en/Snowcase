@@ -118,14 +118,12 @@ impl Snapshot {
         let found = |text: &str| text.to_lowercase().contains(&needle);
         let any_tag = facts.tags.iter().any(|tag| self.tag(*tag).is_some_and(|tag| found(&tag.name)));
         let tagged = self
-            .catalog
-            .node_tags
-            .iter()
-            .filter(|link| any_tag && link.item_id == id)
+            .node_tags_of(id)
+            .filter(|_| any_tag)
             .find_map(|link| {
                 let tag = self.tag(link.tag_id).filter(|tag| found(&tag.name))?;
                 let file = link.blob_id.and_then(|blob| {
-                    let file = self.catalog.files.iter().find(|file| file.item_id == id && file.blob_id == blob)?;
+                    let file = self.item_file(id, blob)?;
                     Some(link.inner_path.clone().unwrap_or_else(|| shown_name(file).to_owned()))
                 });
                 Some(Hit::Tag {
@@ -134,7 +132,7 @@ impl Snapshot {
                 })
             });
         let packaged = || {
-            self.catalog.files.iter().filter(|file| file.item_id == id).find_map(|file| {
+            self.item_files(id).iter().find_map(|file| {
                 let own = self.package_of(file).map(|summary| (shown_name(file), summary));
                 let inside = self
                     .packages_in(file.blob_id)
@@ -168,17 +166,9 @@ impl Snapshot {
     }
 
     pub fn main_file(&self, id: ItemId) -> Option<&ItemFile> {
-        let size = |file: &ItemFile| {
-            self.catalog
-                .blobs
-                .iter()
-                .find(|blob| blob.id == file.blob_id)
-                .map_or(0, |blob| blob.size)
-        };
-        self.catalog
-            .files
+        let size = |file: &ItemFile| self.blob(file.blob_id).map_or(0, |blob| blob.size);
+        self.item_files(id)
             .iter()
-            .filter(|file| file.item_id == id)
             .max_by_key(|file| (file.extracted_from_blob_id.is_none(), size(file), std::cmp::Reverse(file.blob_id)))
     }
 
