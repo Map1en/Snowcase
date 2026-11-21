@@ -1,10 +1,10 @@
 use super::*;
-use snowcase_core::library::{ItemFacts, Library, Scope, SortKey};
+use snowcase_core::library::{Filter, ItemFacts, Library, Scope, SortKey};
 
 fn snapshot(fixture: &Fixture) -> Vec<(String, usize, usize)> {
     let library = &fixture.library;
     library
-        .query(&Scope::All, "", SortKey::Name)
+        .query(&Filter::default(), SortKey::Name)
         .into_iter()
         .map(|item| {
             let facts = library.facts(item.id).unwrap();

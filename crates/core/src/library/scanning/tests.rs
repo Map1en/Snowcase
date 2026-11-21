@@ -112,6 +112,11 @@ fn the_first_scan_groups_files_into_items_and_reports_what_it_skipped() {
             ("Outfit_v1.0/Outfit/body.png".into(), true, LocationState::Present),
         ]
     );
+    assert_eq!(
+        fx.library.main_file(item).map(|file| file.file_name.as_str()),
+        Some("Outfit_v1.0.zip"),
+        "the original wins over its extracted copies"
+    );
     let zip = fx.library.files(item).into_iter().find(|view| view.file.file_name == "Outfit_v1.0.zip").unwrap();
     let node = FacetNode {
         item_id: item,

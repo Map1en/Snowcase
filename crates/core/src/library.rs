@@ -12,8 +12,8 @@ use crate::names::tag_key;
 use crate::scan::ArchiveCache;
 use snowcase_store::{
     Blob, BlobId, BlobKind, BlobLocation, Catalog, Facet, FacetKey, FacetNode, FacetOrigin, FacetValue,
-    FileImport, Folder, FolderId, Item, ItemChanges, ItemFile, ItemId, Store, StoreError, Tag,
-    TagId,
+    FileImport, Folder, FolderId, Item, ItemChanges, ItemFile, ItemId, Root, RootId, Store,
+    StoreError, Tag, TagId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,8 +91,48 @@ pub fn collect_files(paths: &[PathBuf]) -> Vec<PathBuf> {
 pub enum Scope {
     #[default]
     All,
-    Tag(TagId),
     Folder(FolderId),
+    Root(RootId),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Filter {
+    pub scope: Scope,
+    pub search: String,
+    pub category: Option<String>,
+    pub target: Option<String>,
+    pub shop: Option<String>,
+    pub tag: Option<TagId>,
+}
+
+impl Filter {
+    pub fn search(search: &str) -> Self {
+        Self {
+            search: search.to_owned(),
+            ..Self::default()
+        }
+    }
+
+    pub fn scope(scope: Scope) -> Self {
+        Self {
+            scope,
+            ..Self::default()
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Hit {
+    File(String),
+    Tag { name: String, file: Option<String> },
+    Attribute(String),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Hints {
+    pub extracted: usize,
+    pub duplicates: usize,
+    pub versions: Vec<(ItemId, String)>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -111,6 +151,24 @@ pub struct ItemFacts {
     pub file_count: usize,
     pub file_names: Vec<String>,
     pub kinds: BTreeSet<FileKind>,
+    pub roots: BTreeSet<RootId>,
+    pub attributes: Vec<(FacetKey, String)>,
+    pub shop: Option<String>,
+}
+
+impl ItemFacts {
+    pub fn attribute(&self, key: FacetKey) -> Option<&str> {
+        self.attributes
+            .iter()
+            .find(|(candidate, _)| *candidate == key)
+            .map(|(_, value)| value.as_str())
+    }
+
+    fn has(&self, key: FacetKey, value: &str) -> bool {
+        self.attributes
+            .iter()
+            .any(|(candidate, found)| *candidate == key && found == value)
+    }
 }
 
 pub struct FileView<'a> {
@@ -374,13 +432,13 @@ impl Snapshot {
         self.facts.get(&id)
     }
 
-    pub fn query(&self, scope: &Scope, search: &str, sort: SortKey) -> Vec<&Item> {
-        let needle = search.trim().to_lowercase();
+    pub fn query(&self, filter: &Filter, sort: SortKey) -> Vec<&Item> {
+        let needle = filter.search.trim().to_lowercase();
         let mut found: Vec<&Item> = self
             .catalog
             .items
             .iter()
-            .filter(|item| self.matches(item, scope, &needle))
+            .filter(|item| self.matches(item, filter, &needle))
             .collect();
         match sort {
             SortKey::Added => found.sort_by_key(|item| std::cmp::Reverse((item.created_at, item.id))),
@@ -396,33 +454,159 @@ impl Snapshot {
         self.catalog
             .items
             .iter()
-            .filter(|item| self.matches(item, scope, ""))
+            .filter(|item| self.in_scope(item.id, scope))
             .count()
     }
 
-    fn matches(&self, item: &Item, scope: &Scope, needle: &str) -> bool {
-        let facts = self.facts.get(&item.id);
-        let in_scope = match scope {
-            Scope::All => true,
-            Scope::Tag(tag) => facts.is_some_and(|facts| facts.tags.contains(tag)),
-            Scope::Folder(folder) => facts.is_some_and(|facts| facts.folders.contains(folder)),
-        };
-        if !in_scope {
+    fn in_scope(&self, id: ItemId, scope: &Scope) -> bool {
+        let Some(facts) = self.facts.get(&id) else {
             return false;
+        };
+        match scope {
+            Scope::All => true,
+            Scope::Folder(folder) => facts.folders.contains(folder),
+            Scope::Root(root) => facts.roots.contains(root),
         }
-        if needle.is_empty() || item.title.to_lowercase().contains(needle) {
-            return true;
+    }
+
+    fn matches(&self, item: &Item, filter: &Filter, needle: &str) -> bool {
+        let Some(facts) = self.facts.get(&item.id) else {
+            return false;
+        };
+        let wanted = |key, value: &Option<String>| value.as_ref().is_none_or(|value| facts.has(key, value));
+        let fits = self.in_scope(item.id, &filter.scope)
+            && wanted(FacetKey::Category, &filter.category)
+            && wanted(FacetKey::Target, &filter.target)
+            && filter.shop.as_ref().is_none_or(|shop| facts.shop.as_ref() == Some(shop))
+            && filter.tag.is_none_or(|tag| facts.tags.contains(&tag));
+        fits && (needle.is_empty()
+            || item.title.to_lowercase().contains(needle)
+            || facts.shop.as_ref().is_some_and(|shop| shop.to_lowercase().contains(needle))
+            || self.hit(item.id, needle).is_some())
+    }
+
+    pub fn hit(&self, id: ItemId, search: &str) -> Option<Hit> {
+        let needle = search.trim().to_lowercase();
+        let facts = self.facts.get(&id)?;
+        if needle.is_empty() {
+            return None;
         }
-        facts.is_some_and(|facts| {
-            facts
-                .file_names
-                .iter()
-                .any(|name| name.to_lowercase().contains(needle))
-                || facts.tags.iter().any(|id| {
-                    self.tag(*id)
-                        .is_some_and(|tag| tag.name.to_lowercase().contains(needle))
+        let found = |text: &str| text.to_lowercase().contains(&needle);
+        let any_tag = facts.tags.iter().any(|tag| self.tag(*tag).is_some_and(|tag| found(&tag.name)));
+        let tagged = self
+            .catalog
+            .node_tags
+            .iter()
+            .filter(|link| any_tag && link.item_id == id)
+            .find_map(|link| {
+                let tag = self.tag(link.tag_id).filter(|tag| found(&tag.name))?;
+                let file = link.blob_id.and_then(|blob| {
+                    let file = self.catalog.files.iter().find(|file| file.item_id == id && file.blob_id == blob)?;
+                    Some(link.inner_path.clone().unwrap_or_else(|| shown_name(file).to_owned()))
+                });
+                Some(Hit::Tag {
+                    name: tag.name.clone(),
+                    file,
                 })
-        })
+            });
+        tagged
+            .or_else(|| facts.file_names.iter().find(|name| found(name)).cloned().map(Hit::File))
+            .or_else(|| {
+                facts
+                    .attributes
+                    .iter()
+                    .find(|(_, value)| found(value))
+                    .map(|(_, value)| Hit::Attribute(value.clone()))
+            })
+    }
+
+    pub fn main_file(&self, id: ItemId) -> Option<&ItemFile> {
+        let size = |file: &ItemFile| {
+            self.catalog
+                .blobs
+                .iter()
+                .find(|blob| blob.id == file.blob_id)
+                .map_or(0, |blob| blob.size)
+        };
+        self.catalog
+            .files
+            .iter()
+            .filter(|file| file.item_id == id)
+            .max_by_key(|file| (file.extracted_from_blob_id.is_none(), size(file), std::cmp::Reverse(file.blob_id)))
+    }
+
+    pub fn suggest_tags(&self, draft: &str) -> Vec<(&Tag, usize)> {
+        let key = tag_key(draft);
+        let mut tags: Vec<(&Tag, usize)> = self
+            .tag_counts()
+            .into_iter()
+            .filter(|(tag, _)| {
+                key.is_empty()
+                    || tag.key != key
+                        && (tag.key.contains(&key) && key.chars().count() >= 2 || key.contains(&tag.key))
+            })
+            .collect();
+        tags.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.name.cmp(&b.0.name)));
+        tags
+    }
+
+    pub fn values(&self, key: FacetKey) -> Vec<(String, usize)> {
+        tally(self.facts.values().flat_map(|facts| {
+            facts
+                .attributes
+                .iter()
+                .filter(move |(candidate, _)| *candidate == key)
+                .map(|(_, value)| value.clone())
+        }))
+    }
+
+    pub fn shops(&self) -> Vec<(String, usize)> {
+        tally(self.facts.values().filter_map(|facts| facts.shop.clone()))
+    }
+
+    pub fn roots(&self) -> Vec<(&Root, usize)> {
+        self.catalog
+            .roots
+            .iter()
+            .map(|root| (root, self.count(&Scope::Root(root.id))))
+            .collect()
+    }
+
+    pub fn hints(&self, id: ItemId) -> Hints {
+        let own: Vec<&ItemFile> = self.catalog.files.iter().filter(|file| file.item_id == id).collect();
+        let fingerprint = |blob: BlobId| {
+            self.catalog
+                .blobs
+                .iter()
+                .find(|candidate| candidate.id == blob)
+                .and_then(|blob| blob.fingerprint.as_deref())
+        };
+        let mine: HashSet<&str> = own.iter().filter_map(|file| fingerprint(file.blob_id)).collect();
+        let duplicates = self
+            .catalog
+            .files
+            .iter()
+            .filter(|file| !own.iter().any(|mine| mine.blob_id == file.blob_id))
+            .filter(|file| fingerprint(file.blob_id).is_some_and(|print| mine.contains(print)))
+            .count();
+        let title = self.item(id).map(|item| item.title.to_lowercase());
+        let version = self.facts.get(&id).and_then(|facts| facts.attribute(FacetKey::Version));
+        let mut versions: Vec<(ItemId, String)> = self
+            .catalog
+            .items
+            .iter()
+            .filter(|item| item.id != id && Some(item.title.to_lowercase()) == title)
+            .filter_map(|item| {
+                let other = self.facts.get(&item.id)?.attribute(FacetKey::Version)?;
+                (Some(other) != version).then(|| (item.id, other.to_owned()))
+            })
+            .collect();
+        versions.sort_by(|a, b| a.1.cmp(&b.1));
+        Hints {
+            extracted: own.iter().filter(|file| file.extracted_from_blob_id.is_some()).count(),
+            duplicates,
+            versions,
+        }
     }
 
     fn tag(&self, id: TagId) -> Option<&Tag> {
@@ -441,12 +625,24 @@ impl Snapshot {
         tags
     }
 
+    pub fn file_tags(&self, id: ItemId, blob: BlobId) -> Vec<&Tag> {
+        self.catalog
+            .node_tags
+            .iter()
+            .filter(|link| link.item_id == id && link.blob_id == Some(blob))
+            .filter_map(|link| self.tag(link.tag_id))
+            .collect()
+    }
+
     pub fn tag_counts(&self) -> Vec<(&Tag, usize)> {
         let mut tags: Vec<_> = self
             .catalog
             .tags
             .iter()
-            .map(|tag| (tag, self.count(&Scope::Tag(tag.id))))
+            .map(|tag| {
+                let count = self.facts.values().filter(|facts| facts.tags.contains(&tag.id)).count();
+                (tag, count)
+            })
             .filter(|(_, count)| *count > 0)
             .collect();
         tags.sort_by_key(|(tag, _)| tag.name.to_lowercase());
@@ -597,6 +793,12 @@ fn facts_of(catalog: &Catalog, wanted: impl Fn(ItemId) -> bool) -> HashMap<ItemI
         .filter(|item| wanted(item.id))
         .map(|item| (item.id, ItemFacts::default()))
         .collect();
+    let mut roots: HashMap<BlobId, Vec<RootId>> = HashMap::new();
+    for location in &catalog.locations {
+        if let Some(root) = location.root_id {
+            roots.entry(location.blob_id).or_default().push(root);
+        }
+    }
     let mut counted = BTreeSet::new();
     for file in &catalog.files {
         let item = file.item_id;
@@ -605,6 +807,10 @@ fn facts_of(catalog: &Catalog, wanted: impl Fn(ItemId) -> bool) -> HashMap<ItemI
         };
         entry.file_count += 1;
         entry.file_names.push(file.file_name.clone());
+        if let Some(name) = &file.display_name {
+            entry.file_names.push(name.clone());
+        }
+        entry.roots.extend(roots.get(&file.blob_id).into_iter().flatten());
         if let Some(blob) = blobs.get(&file.blob_id) {
             entry.kinds.insert(FileKind::from(blob.kind));
             if counted.insert((item, blob.id)) {
@@ -622,7 +828,42 @@ fn facts_of(catalog: &Catalog, wanted: impl Fn(ItemId) -> bool) -> HashMap<ItemI
             entry.folders.insert(link.folder_id);
         }
     }
+    for source in &catalog.sources {
+        if let (Some(entry), Some(author)) = (facts.get_mut(&source.item_id), &source.author) {
+            entry.shop.get_or_insert_with(|| author.clone());
+        }
+    }
+    let mut by_item: HashMap<ItemId, Vec<&Facet>> = HashMap::new();
+    for facet in &catalog.facets {
+        by_item.entry(facet.item_id).or_default().push(facet);
+    }
+    for (id, entry) in &mut facts {
+        let Some(rows) = by_item.get(id) else {
+            continue;
+        };
+        let node = item_node(*id);
+        for key in FacetKey::ALL {
+            let keyed: Vec<&Facet> = rows.iter().copied().filter(|facet| facet.key == *key).collect();
+            entry
+                .attributes
+                .extend(resolve(&keyed, &node).into_iter().map(|facet| (*key, facet.value)));
+        }
+    }
     facts
+}
+
+fn tally(values: impl Iterator<Item = String>) -> Vec<(String, usize)> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for value in values {
+        *counts.entry(value).or_default() += 1;
+    }
+    let mut counts: Vec<_> = counts.into_iter().collect();
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    counts
+}
+
+pub fn shown_name(file: &ItemFile) -> &str {
+    file.display_name.as_deref().unwrap_or(&file.file_name)
 }
 
 fn upsert<T, K: Ord>(rows: &mut Vec<T>, changed: Vec<T>, key: impl Fn(&T) -> K) {

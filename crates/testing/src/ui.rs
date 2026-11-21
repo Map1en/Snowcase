@@ -98,3 +98,23 @@ pub fn press(window: AnyWindowHandle, key: &str, cx: &mut TestAppContext) {
         .unwrap();
     settle(window, cx);
 }
+
+pub fn choose(window: AnyWindowHandle, select: &'static str, index: usize, cx: &mut TestAppContext) {
+    settle(window, cx);
+    cx.update_window(window, |_, window, cx| {
+        window.within(select).click("input", cx);
+        for _ in 0..=index {
+            window.press("down", cx);
+        }
+        window.press("enter", cx);
+    })
+    .unwrap();
+    settle(window, cx);
+}
+
+pub fn clear(window: AnyWindowHandle, select: &'static str, cx: &mut TestAppContext) {
+    settle(window, cx);
+    cx.update_window(window, |_, window, cx| window.within(select).click("clean", cx))
+        .unwrap();
+    settle(window, cx);
+}

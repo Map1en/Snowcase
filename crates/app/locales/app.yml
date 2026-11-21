@@ -65,30 +65,6 @@ sort.newest:
   zh-TW: 最新
   ja: 新しい順
   ko: 최신순
-layout.grid:
-  en: Grid
-  zh-CN: 网格
-  zh-TW: 網格
-  ja: グリッド
-  ko: 그리드
-layout.table:
-  en: Table
-  zh-CN: 表格
-  zh-TW: 表格
-  ja: テーブル
-  ko: 표
-action.add_files:
-  en: Add files
-  zh-CN: 添加文件
-  zh-TW: 新增檔案
-  ja: ファイルを追加
-  ko: 파일 추가
-action.open:
-  en: Open
-  zh-CN: 打开
-  zh-TW: 開啟
-  ja: 開く
-  ko: 열기
 action.close:
   en: Close
   zh-CN: 关闭
@@ -126,11 +102,11 @@ empty.no_library:
   ja: Snowcase でライブラリを開けませんでした
   ko: Snowcase에서 라이브러리를 열 수 없습니다
 empty.library:
-  en: Drop files or folders here, or click Add files
-  zh-CN: 将文件或文件夹拖到这里，或点击“添加文件”
-  zh-TW: 將檔案或資料夾拖曳到這裡，或點選「新增檔案」
-  ja: ファイルやフォルダーをここにドロップするか、「ファイルを追加」をクリックしてください
-  ko: 파일이나 폴더를 여기에 끌어다 놓거나 '파일 추가'를 클릭하세요
+  en: Add a library folder on the left, or drop files here
+  zh-CN: 在左边添加库文件夹，或者把文件拖到这里
+  zh-TW: 在左邊新增庫資料夾，或把檔案拖曳到這裡
+  ja: 左でライブラリフォルダーを追加するか、ここにファイルをドロップしてください
+  ko: 왼쪽에서 라이브러리 폴더를 추가하거나 파일을 여기에 끌어다 놓으세요
 empty.no_results:
   en: Nothing matches this filter
   zh-CN: 没有符合筛选条件的项目
@@ -155,12 +131,6 @@ item.files:
   zh-TW: 檔案
   ja: ファイル
   ko: 파일
-item.overview:
-  en: Overview
-  zh-CN: 概览
-  zh-TW: 概覽
-  ja: 概要
-  ko: 개요
 item.name:
   en: Name
   zh-CN: 名称
@@ -215,3 +185,171 @@ error.non_utf8_path:
   zh-TW: 資產庫路徑包含不支援的字元：%{path}
   ja: "ライブラリのパスに使用できない文字が含まれています: %{path}"
   ko: "라이브러리 경로에 지원되지 않는 문자가 있습니다: %{path}"
+filter.category:
+  en: Type
+  zh-CN: 类型
+  zh-TW: 類型
+  ja: 種類
+  ko: 유형
+filter.target:
+  en: Fits
+  zh-CN: 适配
+  zh-TW: 適配
+  ja: 対応
+  ko: 대응
+filter.shop:
+  en: Shop
+  zh-CN: 店铺
+  zh-TW: 店鋪
+  ja: ショップ
+  ko: 상점
+filter.more:
+  en: More filters
+  zh-CN: ＋筛选
+  zh-TW: ＋篩選
+  ja: ＋絞り込み
+  ko: ＋필터
+nav.toggle:
+  en: Show or hide the sidebar
+  zh-CN: 收起或展开侧栏
+  zh-TW: 收合或展開側欄
+  ja: サイドバーの表示を切り替え
+  ko: 사이드바 표시 전환
+root.title:
+  en: Library folders
+  zh-CN: 库文件夹
+  zh-TW: 庫資料夾
+  ja: ライブラリフォルダー
+  ko: 라이브러리 폴더
+root.add:
+  en: Add library folder
+  zh-CN: 添加库文件夹
+  zh-TW: 新增庫資料夾
+  ja: ライブラリフォルダーを追加
+  ko: 라이브러리 폴더 추가
+status.background:
+  en: Background %{done} / %{total}
+  zh-CN: 后台整理 %{done} / %{total}
+  zh-TW: 背景整理 %{done} / %{total}
+  ja: バックグラウンド処理 %{done} / %{total}
+  ko: 백그라운드 처리 %{done} / %{total}
+status.paused:
+  en: paused
+  zh-CN: 已暂停
+  zh-TW: 已暫停
+  ja: 一時停止中
+  ko: 일시 정지됨
+status.unsupported:
+  en: "%{count} RAR files can't be read yet"
+  zh-CN: "%{count} 个 rar 暂不支持探查"
+  zh-TW: "%{count} 個 rar 暫不支援讀取"
+  ja: RAR %{count} 件はまだ読み取れません
+  ko: RAR %{count}개는 아직 읽을 수 없습니다
+action.pause:
+  en: Pause
+  zh-CN: 暂停
+  zh-TW: 暫停
+  ja: 一時停止
+  ko: 일시 정지
+action.resume:
+  en: Resume
+  zh-CN: 继续
+  zh-TW: 繼續
+  ja: 再開
+  ko: 계속
+action.reveal:
+  en: Show in folder
+  zh-CN: 打开所在文件夹
+  zh-TW: 開啟所在資料夾
+  ja: フォルダーで表示
+  ko: 폴더에서 보기
+item.attributes:
+  en: Attributes
+  zh-CN: 属性
+  zh-TW: 屬性
+  ja: 属性
+  ko: 속성
+item.attributes_hint:
+  en: recognized automatically, editable
+  zh-CN: 自动识别，可改
+  zh-TW: 自動識別，可修改
+  ja: 自動認識・変更可
+  ko: 자동 인식, 수정 가능
+item.no_attributes:
+  en: Nothing recognized yet
+  zh-CN: 还没有识别出属性
+  zh-TW: 還沒有識別出屬性
+  ja: まだ認識された属性はありません
+  ko: 아직 인식된 속성이 없습니다
+item.my_tags:
+  en: My tags
+  zh-CN: 我的标签
+  zh-TW: 我的標籤
+  ja: マイタグ
+  ko: 내 태그
+item.no_tags:
+  en: No tags yet
+  zh-CN: 还没有标签
+  zh-TW: 還沒有標籤
+  ja: タグはまだありません
+  ko: 아직 태그가 없습니다
+tag.similar:
+  en: Similar tags exist, use one?
+  zh-CN: 已有相近的标签，用它吗：
+  zh-TW: 已有相近的標籤，用它嗎：
+  ja: 似たタグがあります。使いますか：
+  ko: "비슷한 태그가 있습니다. 사용할까요:"
+tag.common:
+  en: "Frequent:"
+  zh-CN: 常用：
+  zh-TW: 常用：
+  ja: よく使う：
+  ko: "자주 사용:"
+file.extracted:
+  en: Extracted copy
+  zh-CN: 解压副本
+  zh-TW: 解壓副本
+  ja: 展開済みコピー
+  ko: 압축 해제본
+hint.extracted:
+  en: Also extracted (%{count} files)
+  zh-CN: 另外解压了一份（%{count} 个文件）
+  zh-TW: 另外解壓了一份（%{count} 個檔案）
+  ja: 展開済みのコピーもあります（%{count} ファイル）
+  ko: 압축 해제본도 있습니다 (%{count}개 파일)
+hint.duplicates:
+  en: Same content in %{count} other places
+  zh-CN: 同样内容还有 %{count} 处
+  zh-TW: 同樣內容還有 %{count} 處
+  ja: 同じ内容がほかに %{count} か所あります
+  ko: 같은 내용이 %{count}곳에 더 있습니다
+hint.version:
+  en: "Another version: v%{version}"
+  zh-CN: 同一商品的其他版本：v%{version}
+  zh-TW: 同一商品的其他版本：v%{version}
+  ja: 別のバージョン：v%{version}
+  ko: "다른 버전: v%{version}"
+hit.match:
+  en: "Match: %{name}"
+  zh-CN: 命中：%{name}
+  zh-TW: 命中：%{name}
+  ja: 一致：%{name}
+  ko: "일치: %{name}"
+hit.tag:
+  en: "Tag #%{name}"
+  zh-CN: "命中标签 #%{name}"
+  zh-TW: "命中標籤 #%{name}"
+  ja: "タグ #%{name}"
+  ko: "태그 #%{name}"
+hit.tag_in:
+  en: "Tag #%{name} on %{file}"
+  zh-CN: "命中标签 #%{name}，在 %{file}"
+  zh-TW: "命中標籤 #%{name}，在 %{file}"
+  ja: "%{file} のタグ #%{name}"
+  ko: "%{file}의 태그 #%{name}"
+action.cancel:
+  en: Cancel
+  zh-CN: 取消
+  zh-TW: 取消
+  ja: キャンセル
+  ko: 취소

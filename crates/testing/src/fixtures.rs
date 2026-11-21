@@ -5,7 +5,7 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use snowcase_core::FileKind;
 use snowcase_core::library::{FileInfo, Library, item_node};
-use snowcase_core::FolderId;
+use snowcase_core::{FacetKey, FacetValue, FolderId};
 use snowcase_core::names::CodePage;
 
 const NOUNS: [&str; 8] = [
@@ -14,6 +14,7 @@ const NOUNS: [&str; 8] = [
 const SUFFIXES: [&str; 6] = ["", "_v1.2", "_Kikyo", "_Manuka", "_PSD", "_Quest"];
 const FOLDERS: [&str; 3] = ["Avatars", "Outfits", "Shaders"];
 const TAGS: [&str; 4] = ["favorite", "kikyo", "manuka", "quest"];
+const TARGETS: [&str; 2] = ["Kikyo", "Manuka"];
 
 pub struct Fixture {
     pub library: Library,
@@ -35,12 +36,17 @@ pub fn asset_dir() -> tempfile::TempDir {
     dir
 }
 
-pub fn scanned(count: usize) -> (Fixture, tempfile::TempDir) {
+pub fn packages(count: usize) -> tempfile::TempDir {
     let assets = tempfile::tempdir().expect("create asset directory");
     for n in 0..count {
         std::fs::write(assets.path().join(format!("Outfit{n:02}.unitypackage")), [0x1f, 0x8b, n as u8])
             .expect("write package");
     }
+    assets
+}
+
+pub fn scanned(count: usize) -> (Fixture, tempfile::TempDir) {
+    let assets = packages(count);
     let mut fixture = empty();
     fixture
         .library
@@ -72,6 +78,16 @@ pub fn library(seed: u64, count: usize) -> Fixture {
             let folder = folders[pick(&mut rng, folders.len())];
             library.put_in_folder(id, folder).expect("file fixture item");
         }
+        let title = library.item(id).map(|item| item.title.clone()).unwrap_or_default();
+        if let Some(noun) = NOUNS.iter().find(|noun| title.contains(*noun)) {
+            library
+                .set_auto_facets(&item_node(id), FacetKey::Category, &[value(noun)])
+                .expect("categorize fixture item");
+        }
+        let targets: Vec<FacetValue> = TARGETS.iter().filter(|target| title.contains(*target)).map(|target| value(target)).collect();
+        library
+            .set_auto_facets(&item_node(id), FacetKey::Target, &targets)
+            .expect("mark fixture targets");
         for _ in 0..pick(&mut rng, 3) {
             library
                 .tag(&item_node(id), TAGS[pick(&mut rng, TAGS.len())])
@@ -107,6 +123,13 @@ fn files(rng: &mut StdRng, count: usize) -> Vec<FileInfo> {
             }
         })
         .collect()
+}
+
+fn value(text: &str) -> FacetValue {
+    FacetValue {
+        value: text.to_owned(),
+        target_item_id: None,
+    }
 }
 
 fn word(rng: &mut StdRng) -> String {

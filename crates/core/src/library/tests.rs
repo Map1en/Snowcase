@@ -241,15 +241,15 @@ fn query_sorts_by_newest_name_or_size() {
     let (_dir, library) = sample();
 
     assert_eq!(
-        titles(&library.query(&Scope::All, "", SortKey::Added)),
+        titles(&library.query(&Filter::default(), SortKey::Added)),
         ["cover", "Hair", "Gloves"]
     );
     assert_eq!(
-        titles(&library.query(&Scope::All, "", SortKey::Name)),
+        titles(&library.query(&Filter::default(), SortKey::Name)),
         ["cover", "Gloves", "Hair"]
     );
     assert_eq!(
-        titles(&library.query(&Scope::All, "", SortKey::Size)),
+        titles(&library.query(&Filter::default(), SortKey::Size)),
         ["Hair", "Gloves", "cover"]
     );
 }
@@ -263,11 +263,11 @@ fn query_combines_scope_with_search_over_titles_tags_and_file_names() {
     let folder = library.create_folder(None, "Avatars").unwrap().unwrap();
     library.put_in_folder(gloves, folder).unwrap();
 
-    let query = |scope: Scope, search: &str| titles(&library.query(&scope, search, SortKey::Name));
-    assert_eq!(query(Scope::All, " KIKYO "), ["Hair"]);
-    assert_eq!(query(Scope::All, ".unitypackage"), ["Gloves"]);
-    assert_eq!(query(Scope::Tag(kikyo), ""), ["Hair"]);
-    assert_eq!(query(Scope::Folder(folder), ""), ["Gloves"]);
+    let query = |filter: Filter| titles(&library.query(&filter, SortKey::Name));
+    assert_eq!(query(Filter::search(" KIKYO ")), ["Hair"]);
+    assert_eq!(query(Filter::search(".unitypackage")), ["Gloves"]);
+    assert_eq!(query(Filter { tag: Some(kikyo), ..Filter::default() }), ["Hair"]);
+    assert_eq!(query(Filter::scope(Scope::Folder(folder))), ["Gloves"]);
 }
 
 #[test]
@@ -367,9 +367,82 @@ fn a_tag_on_a_file_finds_its_item_and_spellings_share_one_tag() {
 
     assert_eq!(olive, again);
     assert_eq!(library.snapshot().catalog.tags[0].name, "Olive Branch");
-    assert_eq!(titles(&library.query(&Scope::Tag(olive), "", SortKey::Name)), ["Gloves"]);
-    assert_eq!(titles(&library.query(&Scope::All, "olive", SortKey::Name)), ["Gloves"]);
+    let tagged = Filter { tag: Some(olive), ..Filter::default() };
+    assert_eq!(titles(&library.query(&tagged, SortKey::Name)), ["Gloves"]);
+    assert_eq!(titles(&library.query(&Filter::search("olive"), SortKey::Name)), ["Gloves"]);
+    assert_eq!(
+        library.hit(gloves, "oliv"),
+        Some(Hit::Tag { name: "Olive Branch".into(), file: Some("Gloves.unitypackage".into()) })
+    );
     library.untag(&item_node(gloves), olive).unwrap();
     assert!(library.tags_of(gloves).is_empty());
-    assert_eq!(titles(&library.query(&Scope::Tag(olive), "", SortKey::Name)), ["Gloves"]);
+    assert_eq!(titles(&library.query(&tagged, SortKey::Name)), ["Gloves"]);
+}
+
+fn facet(value: &str) -> FacetValue {
+    FacetValue {
+        value: value.into(),
+        target_item_id: None,
+    }
+}
+
+#[test]
+fn attribute_filters_narrow_by_category_and_target_and_list_their_values() {
+    let (_dir, mut library) = sample();
+    let gloves = id_of(&library, "Gloves");
+    let hair = id_of(&library, "Hair");
+    library.set_auto_facets(&item_node(gloves), FacetKey::Category, &[facet("Outfit")]).unwrap();
+    library.set_auto_facets(&item_node(hair), FacetKey::Category, &[facet("Hair")]).unwrap();
+    library
+        .set_auto_facets(&item_node(gloves), FacetKey::Target, &[facet("Mafuyu"), facet("Cian")])
+        .unwrap();
+    library.set_auto_facets(&item_node(hair), FacetKey::Target, &[facet("Mafuyu")]).unwrap();
+
+    let query = |filter: Filter| titles(&library.query(&filter, SortKey::Name));
+    assert_eq!(query(Filter { category: Some("Hair".into()), ..Filter::default() }), ["Hair"]);
+    assert_eq!(query(Filter { target: Some("Mafuyu".into()), ..Filter::default() }), ["Gloves", "Hair"]);
+    assert_eq!(query(Filter { target: Some("Cian".into()), ..Filter::default() }), ["Gloves"]);
+    assert_eq!(library.values(FacetKey::Target), [("Mafuyu".to_owned(), 2), ("Cian".to_owned(), 1)]);
+    assert_eq!(library.hit(gloves, "cia"), Some(Hit::Attribute("Cian".into())));
+
+    library.remove_facet(&item_node(gloves), FacetKey::Target, "Cian").unwrap();
+    let cian = Filter { target: Some("Cian".into()), ..Filter::default() };
+    assert!(library.query(&cian, SortKey::Name).is_empty());
+}
+
+#[test]
+fn hints_name_other_versions_of_the_same_title() {
+    let (_dir, mut library) = sample();
+    library
+        .import(vec![FileInfo {
+            path: "D:/BOOTH/old/Gloves.unitypackage".into(),
+            ..file("Gloves.unitypackage", 31, FileKind::UnityPackage)
+        }])
+        .unwrap();
+    let ids: Vec<ItemId> = library.items().iter().filter(|item| item.title == "Gloves").map(|item| item.id).collect();
+    library.set_auto_facets(&item_node(ids[0]), FacetKey::Version, &[facet("1.0")]).unwrap();
+    library.set_auto_facets(&item_node(ids[1]), FacetKey::Version, &[facet("1.1")]).unwrap();
+
+    assert_eq!(library.hints(ids[0]).versions, [(ids[1], "1.1".to_owned())]);
+    assert_eq!(library.hints(ids[1]).versions, [(ids[0], "1.0".to_owned())]);
+    assert!(library.hints(id_of(&library, "Hair")).versions.is_empty());
+}
+
+#[test]
+fn tag_suggestions_offer_close_spellings_most_used_first() {
+    let (_dir, mut library) = sample();
+    let gloves = id_of(&library, "Gloves");
+    let hair = id_of(&library, "Hair");
+    library.tag(&item_node(gloves), "Black Tights").unwrap();
+    library.tag(&item_node(hair), "Black Tights").unwrap();
+    library.tag(&item_node(hair), "Black").unwrap();
+    library.tag(&item_node(hair), "Olive").unwrap();
+
+    let names = |draft: &str| -> Vec<String> {
+        library.suggest_tags(draft).iter().map(|(tag, _)| tag.name.clone()).collect()
+    };
+    assert_eq!(names("black tights long"), ["Black Tights", "Black"]);
+    assert_eq!(names("ＢＬＡＣＫ"), ["Black Tights"]);
+    assert_eq!(names("o"), Vec::<String>::new());
+    assert_eq!(names(""), ["Black Tights", "Black", "Olive"]);
 }

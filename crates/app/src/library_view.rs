@@ -1,66 +1,75 @@
-mod item_table;
-
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use gpui_kit::component::button::*;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::resizable::{h_resizable, resizable_panel};
-use gpui_kit::component::tab::{Tab, TabBar};
-use gpui_kit::component::table::{DataTable, TableEvent, TableState};
+use gpui_kit::component::select::{Select, SelectEvent, SelectItem, SelectState};
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use snowcase_core::library::{Library, Scope, SortKey, Snapshot, collect_files, inspect_file, item_node};
-use snowcase_core::{FileKind, ItemId, LocationState, StoreError};
+use snowcase_core::library::{
+    Filter, Hit, Library, Scope, Snapshot, SortKey, collect_files, inspect_file, item_node,
+    shown_name,
+};
+use snowcase_core::names::CodePage;
+use snowcase_core::{FacetKey, FileKind, ItemId, LocationState, StoreError};
 
-use self::item_table::{ItemRow, ItemTable};
 use crate::i18n::{self, Locale, tr};
 use crate::library_store::LibraryStore;
 
-const CARD_WIDTH: f32 = 168.;
-const CARD_HEIGHT: f32 = 196.;
+const CARD_WIDTH: f32 = 172.;
+const CARD_HEIGHT: f32 = 236.;
 const GRID_GAP: f32 = 12.;
 const GRID_PADDING: f32 = 16.;
+const NAV_WIDTH: f32 = 220.;
+const DETAIL_WIDTH: f32 = 460.;
+const SUGGESTIONS: usize = 6;
+const TAG_SEPARATORS: [char; 3] = [',', '，', '、'];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Layout {
-    Grid,
-    Table,
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Choice {
+    value: String,
+    title: SharedString,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DetailTab {
-    Overview,
-    Files,
-}
+impl SelectItem for Choice {
+    type Value = String;
 
-const DETAIL_TABS: [DetailTab; 2] = [DetailTab::Overview, DetailTab::Files];
-
-impl DetailTab {
-    fn label(self, cx: &App) -> SharedString {
-        match self {
-            Self::Overview => tr!(cx, "item.overview"),
-            Self::Files => tr!(cx, "item.files"),
-        }
+    fn title(&self) -> SharedString {
+        self.title.clone()
     }
+
+    fn value(&self) -> &String {
+        &self.value
+    }
+}
+
+type Choices = Entity<SelectState<Vec<Choice>>>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FilterField {
+    Category,
+    Target,
+    Shop,
+    Tag,
 }
 
 pub struct LibraryView {
     store: Entity<LibraryStore>,
-    scope: Scope,
+    filter: Filter,
     sort: SortKey,
-    layout: Layout,
+    nav_open: bool,
+    more_filters: bool,
     rows: Vec<ItemId>,
     selected: Option<ItemId>,
-    page: Option<(ItemId, DetailTab)>,
     grid_width: Pixels,
     search: Entity<InputState>,
     tag_input: Entity<InputState>,
     folder_input: Entity<InputState>,
-    table: Entity<TableState<ItemTable>>,
+    selects: Vec<(FilterField, Choices)>,
     pending_imports: usize,
     last_failures: usize,
+    unsupported: usize,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -69,30 +78,48 @@ impl LibraryView {
         let search = cx.new(|cx| InputState::new(window, cx));
         let tag_input = cx.new(|cx| InputState::new(window, cx));
         let folder_input = cx.new(|cx| InputState::new(window, cx));
-        let table = cx.new(|cx| TableState::new(ItemTable::default(), window, cx));
-        let subscriptions = vec![
-            cx.observe(&store, |this, _, cx| this.refresh(cx)),
-            cx.observe_global_in::<Locale>(window, |this, window, cx| {
-                this.apply_locale(window, cx);
+        let selects: Vec<(FilterField, Choices)> =
+            [FilterField::Category, FilterField::Target, FilterField::Shop, FilterField::Tag]
+                .into_iter()
+                .map(|field| (field, cx.new(|cx| SelectState::new(Vec::new(), None, window, cx))))
+                .collect();
+        let mut subscriptions = vec![
+            cx.observe_in(&store, window, |this, _, window, cx| {
+                this.refresh_choices(window, cx);
                 this.refresh(cx);
             }),
-            cx.subscribe_in(&search, window, |this, _, event, _, cx| {
+            cx.observe_global_in::<Locale>(window, |this, window, cx| {
+                this.apply_locale(window, cx);
+                this.refresh_choices(window, cx);
+                this.refresh(cx);
+            }),
+            cx.subscribe_in(&search, window, |this, input, event, _, cx| {
                 if matches!(event, InputEvent::Change) {
+                    this.filter.search = input.read(cx).value().to_string();
                     this.refresh(cx);
                 }
             }),
             cx.subscribe_in(&tag_input, window, |this, input, event, window, cx| {
-                let (InputEvent::PressEnter { .. }, Some(id)) = (event, this.current_item())
-                else {
-                    return;
-                };
-                let name = input.read(cx).value();
-                this.change(cx, move |library| library.tag(&item_node(id), &name));
-                input.update(cx, |input, cx| input.set_value("", window, cx));
+                let text = input.read(cx).value().to_string();
+                match event {
+                    InputEvent::PressEnter { .. } => {
+                        this.add_tag(text, cx);
+                        input.update(cx, |input, cx| input.set_value("", window, cx));
+                    }
+                    InputEvent::Change if text.contains(TAG_SEPARATORS) => {
+                        let mut parts: Vec<&str> = text.split(TAG_SEPARATORS).collect();
+                        let rest = parts.pop().unwrap_or_default().to_owned();
+                        for part in parts {
+                            this.add_tag(part.to_owned(), cx);
+                        }
+                        input.update(cx, |input, cx| input.set_value(rest, window, cx));
+                    }
+                    InputEvent::Change => cx.notify(),
+                    _ => {}
+                }
             }),
             cx.subscribe_in(&folder_input, window, |this, input, event, window, cx| {
-                let (InputEvent::PressEnter { .. }, Some(id)) = (event, this.current_item())
-                else {
+                let (InputEvent::PressEnter { .. }, Some(id)) = (event, this.selected) else {
                     return;
                 };
                 let name = input.read(cx).value();
@@ -104,41 +131,39 @@ impl LibraryView {
                 });
                 input.update(cx, |input, cx| input.set_value("", window, cx));
             }),
-            cx.subscribe_in(&table, window, |this, table, event, _, cx| {
-                let row = |ix: &usize| table.read(cx).delegate().rows.get(*ix).map(|row| row.id);
-                match event {
-                    TableEvent::SelectRow(ix) => {
-                        if let Some(id) = row(ix) {
-                            this.select(id, cx);
-                        }
-                    }
-                    TableEvent::DoubleClickedRow(ix) => {
-                        if let Some(id) = row(ix) {
-                            this.open_page(id, cx);
-                        }
-                    }
-                    _ => {}
-                }
-            }),
         ];
+        for (field, select) in &selects {
+            let field = *field;
+            subscriptions.push(cx.subscribe_in(
+                select,
+                window,
+                move |this, _, event: &SelectEvent<Vec<Choice>>, _, cx| {
+                    let SelectEvent::Confirm(value) = event;
+                    this.set_filter(field, value.clone());
+                    this.refresh(cx);
+                },
+            ));
+        }
         let mut view = Self {
             store,
-            scope: Scope::All,
+            filter: Filter::default(),
             sort: SortKey::Added,
-            layout: Layout::Grid,
+            nav_open: true,
+            more_filters: false,
             rows: Vec::new(),
             selected: None,
-            page: None,
             grid_width: px(0.),
             search,
             tag_input,
             folder_input,
-            table,
+            selects,
             pending_imports: 0,
             last_failures: 0,
+            unsupported: 0,
             _subscriptions: subscriptions,
         };
         view.apply_locale(window, cx);
+        view.refresh_choices(window, cx);
         view.refresh(cx);
         view
     }
@@ -154,8 +179,56 @@ impl LibraryView {
         }
     }
 
-    fn current_item(&self) -> Option<ItemId> {
-        self.page.map(|(id, _)| id).or(self.selected)
+    fn set_filter(&mut self, field: FilterField, value: Option<String>) {
+        match field {
+            FilterField::Category => self.filter.category = value,
+            FilterField::Target => self.filter.target = value,
+            FilterField::Shop => self.filter.shop = value,
+            FilterField::Tag => {
+                self.filter.tag = value.and_then(|value| value.parse().ok()).map(snowcase_core::TagId);
+            }
+        }
+    }
+
+    fn refresh_choices(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(library) = self.store.read(cx).snapshot() else {
+            return;
+        };
+        let counted = |values: Vec<(String, usize)>| -> Vec<Choice> {
+            values
+                .into_iter()
+                .map(|(value, count)| Choice {
+                    title: format!("{value}  {count}").into(),
+                    value,
+                })
+                .collect()
+        };
+        let choices: Vec<(FilterField, Vec<Choice>)> = vec![
+            (FilterField::Category, counted(library.values(FacetKey::Category))),
+            (FilterField::Target, counted(library.values(FacetKey::Target))),
+            (FilterField::Shop, counted(library.shops())),
+            (
+                FilterField::Tag,
+                library
+                    .tag_counts()
+                    .into_iter()
+                    .map(|(tag, count)| Choice {
+                        value: tag.id.0.to_string(),
+                        title: format!("#{}  {count}", tag.name).into(),
+                    })
+                    .collect(),
+            ),
+        ];
+        for (field, items) in choices {
+            let Some((_, select)) = self.selects.iter().find(|(candidate, _)| *candidate == field) else {
+                continue;
+            };
+            let kept = select.update(cx, |select, cx| {
+                select.set_items(items, window, cx);
+                select.selected_value().cloned()
+            });
+            self.set_filter(field, kept);
+        }
     }
 
     fn change<T: Send + 'static>(
@@ -168,43 +241,72 @@ impl LibraryView {
             .detach();
     }
 
+    fn add_tag(&mut self, name: String, cx: &mut Context<Self>) {
+        let Some(id) = self.selected else {
+            return;
+        };
+        if name.trim().is_empty() {
+            return;
+        }
+        self.change(cx, move |library| library.tag(&item_node(id), &name));
+    }
+
+    fn use_tag(&mut self, name: String, window: &mut Window, cx: &mut Context<Self>) {
+        self.add_tag(name, cx);
+        self.tag_input.update(cx, |input, cx| input.set_value("", window, cx));
+    }
+
     fn refresh(&mut self, cx: &mut Context<Self>) {
-        let search = self.search.read(cx).value();
         let Some(library) = self.store.read(cx).snapshot() else {
             return;
         };
         self.rows = library
-            .query(&self.scope, &search, self.sort)
+            .query(&self.filter, self.sort)
             .into_iter()
             .map(|item| item.id)
             .collect();
-        let exists = |id: &ItemId| library.item(*id).is_some();
-        self.selected = self.selected.filter(exists);
-        self.page = self.page.filter(|(id, _)| exists(id));
-        let rows: Vec<ItemRow> = self
-            .rows
-            .iter()
-            .filter_map(|id| ItemRow::new(library, *id))
-            .collect();
-        self.table.update(cx, |table, cx| {
-            table.delegate_mut().rows = rows;
-            table.refresh(cx);
-            cx.notify();
-        });
+        self.selected = self.selected.filter(|id| library.item(*id).is_some());
         cx.notify();
     }
 
-    fn pick_files(&mut self, cx: &mut Context<Self>) {
+    fn pick_root(&mut self, cx: &mut Context<Self>) {
         let picked = cx.prompt_for_paths(PathPromptOptions {
-            files: true,
+            files: false,
             directories: true,
-            multiple: true,
+            multiple: false,
             prompt: None,
         });
         cx.spawn(async move |this, cx| {
             if let Ok(Ok(Some(paths))) = picked.await {
-                this.update(cx, |this, cx| this.add_paths(paths, cx)).ok();
+                this.update(cx, |this, cx| {
+                    for path in paths {
+                        this.scan(path, cx);
+                    }
+                })
+                .ok();
             }
+        })
+        .detach();
+    }
+
+    fn scan(&mut self, root: PathBuf, cx: &mut Context<Self>) {
+        let code_page = code_page(i18n::system_locale());
+        let scanned = self.store.update(cx, |store, cx| {
+            store.change(cx, move |library| {
+                library
+                    .scan_root(&root, code_page)
+                    .map(|report| report.unsupported.len())
+            })
+        });
+        cx.spawn(async move |this, cx| {
+            let unsupported = scanned.await;
+            this.update(cx, |this, cx| {
+                if let Some(unsupported) = unsupported {
+                    this.unsupported = unsupported;
+                }
+                this.store.update(cx, |store, cx| store.start_background(cx));
+            })
+            .ok();
         })
         .detach();
     }
@@ -235,18 +337,15 @@ impl LibraryView {
     }
 
     fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
-        self.scope = scope;
+        self.filter.scope = scope;
         self.refresh(cx);
     }
 
-    fn select(&mut self, id: ItemId, cx: &mut Context<Self>) {
-        self.selected = Some(id);
-        cx.notify();
-    }
-
-    fn open_page(&mut self, id: ItemId, cx: &mut Context<Self>) {
-        self.selected = Some(id);
-        self.page = Some((id, DetailTab::Overview));
+    fn select(&mut self, id: Option<ItemId>, window: &mut Window, cx: &mut Context<Self>) {
+        if self.selected != id {
+            self.tag_input.update(cx, |input, cx| input.set_value("", window, cx));
+        }
+        self.selected = id;
         cx.notify();
     }
 
@@ -266,26 +365,99 @@ impl LibraryView {
         });
     }
 
-    fn render_filters(&self, library: &Snapshot, cx: &Context<Self>) -> Stateful<Div> {
+    fn render_top_bar(&self, cx: &Context<Self>) -> Div {
+        let theme = cx.theme();
+        let select = |field: FilterField, id: &'static str, label: SharedString| {
+            self.selects
+                .iter()
+                .find(|(candidate, _)| *candidate == field)
+                .map(|(_, state)| {
+                    Select::new(state)
+                        .id(id)
+                        .placeholder(label)
+                        .cleanable(true)
+                        .small()
+                        .w(px(150.))
+                })
+        };
+        let main = h_flex()
+            .gap_2()
+            .items_center()
+            .flex_wrap()
+            .px_4()
+            .py_2()
+            .child(
+                Button::new("toggle-nav")
+                    .ghost()
+                    .compact()
+                    .icon(IconName::PanelLeft)
+                    .selected(self.nav_open)
+                    .tooltip(tr!(cx, "nav.toggle"))
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.nav_open = !this.nav_open;
+                        cx.notify();
+                    })),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(240.))
+                    .child(Input::new(&self.search).id("search").cleanable(true)),
+            )
+            .children(select(FilterField::Category, "filter-category", tr!(cx, "filter.category")))
+            .children(select(FilterField::Target, "filter-target", tr!(cx, "filter.target")))
+            .children(select(FilterField::Shop, "filter-shop", tr!(cx, "filter.shop")))
+            .child(
+                Button::new("more-filters")
+                    .outline()
+                    .small()
+                    .label(tr!(cx, "filter.more"))
+                    .selected(self.more_filters)
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.more_filters = !this.more_filters;
+                        cx.notify();
+                    })),
+            );
+        v_flex()
+            .border_b_1()
+            .border_color(theme.border)
+            .child(main)
+            .when(self.more_filters, |this| {
+                this.child(
+                    h_flex()
+                        .id("more-filter-row")
+                        .test_support()
+                        .gap_2()
+                        .px_4()
+                        .pb_2()
+                        .children(select(FilterField::Tag, "filter-tag", tr!(cx, "item.tags"))),
+                )
+            })
+    }
+
+    fn render_nav(&self, library: &Snapshot, cx: &Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let mut column = v_flex()
             .id("filters")
-            .size_full()
+            .test_support()
+            .w(px(NAV_WIDTH))
+            .flex_shrink_0()
+            .h_full()
             .overflow_y_scroll()
             .gap_4()
             .p_3()
+            .border_r_1()
+            .border_color(theme.border)
             .bg(theme.sidebar);
 
-        let count = library.count(&Scope::All);
-        let group = filter_group(tr!(cx, "nav.library"), None).child(self.filter_item(
+        column = column.child(filter_group(tr!(cx, "nav.library"), None).child(self.nav_item(
             "scope-all".into(),
             tr!(cx, "scope.all"),
             0,
-            count,
+            library.count(&Scope::All),
             Scope::All,
             cx,
-        ));
-        column = column.child(group);
+        )));
 
         let add = Button::new("add-folder")
             .ghost()
@@ -293,9 +465,9 @@ impl LibraryView {
             .icon(IconName::Plus)
             .tooltip(tr!(cx, "folder.new"))
             .on_click(cx.listener(|this, _, _, cx| this.add_folder(cx)));
-        let mut group = filter_group(tr!(cx, "item.folders"), Some(add));
+        let mut folders = filter_group(tr!(cx, "item.folders"), Some(add));
         for row in library.folder_tree() {
-            group = group.child(self.filter_item(
+            folders = folders.child(self.nav_item(
                 format!("scope-folder-{}", row.folder.id.0).into(),
                 row.folder.name.clone().into(),
                 row.depth,
@@ -304,27 +476,29 @@ impl LibraryView {
                 cx,
             ));
         }
-        column = column.child(group);
+        column = column.child(folders);
 
-        let tags = library.tag_counts();
-        if tags.is_empty() {
-            return column;
-        }
-        let mut group = filter_group(tr!(cx, "item.tags"), None);
-        for (tag, count) in tags {
-            group = group.child(self.filter_item(
-                format!("scope-tag-{}", tag.id.0).into(),
-                format!("# {}", tag.name).into(),
+        let add = Button::new("add-root")
+            .ghost()
+            .compact()
+            .icon(IconName::Plus)
+            .tooltip(tr!(cx, "root.add"))
+            .on_click(cx.listener(|this, _, _, cx| this.pick_root(cx)));
+        let mut roots = filter_group(tr!(cx, "root.title"), Some(add));
+        for (root, count) in library.roots() {
+            roots = roots.child(self.nav_item(
+                format!("scope-root-{}", root.id.0).into(),
+                folder_name(&root.path).into(),
                 0,
                 count,
-                Scope::Tag(tag.id),
+                Scope::Root(root.id),
                 cx,
             ));
         }
-        column.child(group)
+        column.child(roots)
     }
 
-    fn filter_item(
+    fn nav_item(
         &self,
         id: SharedString,
         label: SharedString,
@@ -334,7 +508,7 @@ impl LibraryView {
         cx: &Context<Self>,
     ) -> impl IntoElement + use<> {
         let theme = cx.theme();
-        let active = self.scope == scope;
+        let active = self.filter.scope == scope;
         h_flex()
             .id(ElementId::Name(id))
             .test_support()
@@ -359,25 +533,23 @@ impl LibraryView {
             .on_click(cx.listener(move |this, _, _, cx| this.set_scope(scope.clone(), cx)))
     }
 
-    fn render_toolbar(&self, cx: &Context<Self>) -> Div {
+    fn render_results_bar(&self, total: usize, cx: &Context<Self>) -> Div {
         let sort = self.sort;
-        let layout = self.layout;
         h_flex()
-            .gap_2()
+            .justify_between()
             .items_center()
-            .px_4()
-            .py_2()
-            .border_b_1()
-            .border_color(cx.theme().border)
+            .px(px(GRID_PADDING))
+            .pt_2()
+            .text_xs()
+            .text_color(cx.theme().muted_foreground)
             .child(
                 div()
-                    .flex_1()
-                    .max_w(px(320.))
-                    .child(Input::new(&self.search).id("search").cleanable(true)),
+                    .id("result-count")
+                    .child(tr!(cx, "status.count", shown = self.rows.len(), total = total)),
             )
             .child(
                 ButtonGroup::new("sort")
-                    .outline()
+                    .ghost()
                     .compact()
                     .children([
                         Button::new("sort-added")
@@ -399,66 +571,77 @@ impl LibraryView {
                         this.refresh(cx);
                     })),
             )
-            .child(
-                ButtonGroup::new("layout")
-                    .outline()
-                    .compact()
-                    .children([
-                        Button::new("layout-grid")
-                            .label(tr!(cx, "layout.grid"))
-                            .selected(layout == Layout::Grid),
-                        Button::new("layout-table")
-                            .label(tr!(cx, "layout.table"))
-                            .selected(layout == Layout::Table),
-                    ])
-                    .on_click(cx.listener(|this, selected: &Vec<usize>, _, cx| {
-                        this.layout = match selected.first() {
-                            Some(1) => Layout::Table,
-                            _ => Layout::Grid,
-                        };
-                        cx.notify();
-                    })),
-            )
-            .child(div().flex_1())
-            .child(
-                Button::new("add-files")
-                    .primary()
-                    .icon(IconName::Plus)
-                    .label(tr!(cx, "action.add_files"))
-                    .on_click(cx.listener(|this, _, _, cx| this.pick_files(cx))),
-            )
     }
 
-    fn render_status(&self, store: &LibraryStore, cx: &Context<Self>) -> Div {
+    fn render_status(&self, store: &LibraryStore, cx: &Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
-        let total = store.snapshot().map_or(0, |library| library.items().len());
-        let mut status = tr!(cx, "status.count", shown = self.rows.len(), total = total).to_string();
+        let progress = store.progress();
+        let mut notes: Vec<SharedString> = Vec::new();
         if self.pending_imports > 0 || store.is_busy() {
-            status.push_str(" · ");
-            status.push_str(&tr!(cx, "status.adding"));
+            notes.push(tr!(cx, "status.adding"));
         } else if self.last_failures > 0 {
-            status.push_str(" · ");
-            status.push_str(&tr!(cx, "status.failures", count = self.last_failures));
+            notes.push(tr!(cx, "status.failures", count = self.last_failures));
         }
+        if self.unsupported > 0 {
+            notes.push(tr!(cx, "status.unsupported", count = self.unsupported));
+        }
+        let background = progress.running.then(|| {
+            let mut label = tr!(cx, "status.background", done = progress.done, total = progress.total).to_string();
+            if progress.paused {
+                label.push_str(" · ");
+                label.push_str(&tr!(cx, "status.paused"));
+            }
+            let paused = progress.paused;
+            h_flex()
+                .gap_2()
+                .items_center()
+                .child(div().id("background-progress").child(label))
+                .child(
+                    Button::new("pause-background")
+                        .outline()
+                        .xsmall()
+                        .label(if paused { tr!(cx, "action.resume") } else { tr!(cx, "action.pause") })
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.store.update(cx, |store, cx| {
+                                if paused {
+                                    store.resume_background(cx);
+                                } else {
+                                    store.pause_background(cx);
+                                }
+                            });
+                        })),
+                )
+                .child(
+                    Button::new("cancel-background")
+                        .ghost()
+                        .xsmall()
+                        .label(tr!(cx, "action.cancel"))
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.store.update(cx, |store, cx| store.cancel_background(cx));
+                        })),
+                )
+        });
         h_flex()
+            .id("status-bar")
+            .test_support()
             .gap_3()
             .px_4()
             .py_1()
+            .min_h(px(30.))
+            .items_center()
             .border_t_1()
             .border_color(theme.border)
             .text_xs()
             .text_color(theme.muted_foreground)
-            .child(status)
-            .children(
-                store
-                    .error()
-                    .map(|error| {
-                        div()
-                            .text_color(theme.danger)
-                            .truncate()
-                            .child(i18n::error_message(error, cx))
-                    }),
-            )
+            .children(background)
+            .children(notes.into_iter().map(|note| div().child(note)))
+            .child(div().flex_1())
+            .children(store.error().map(|error| {
+                div()
+                    .text_color(theme.danger)
+                    .truncate()
+                    .child(i18n::error_message(error, cx))
+            }))
     }
 
     fn render_grid(&self, cx: &Context<Self>) -> AnyElement {
@@ -519,6 +702,12 @@ impl LibraryView {
         };
         let id = item.id;
         let facts = library.facts(id).cloned().unwrap_or_default();
+        let meta: Vec<String> = [facts.attribute(FacetKey::Category).map(str::to_owned), facts.shop.clone()]
+            .into_iter()
+            .flatten()
+            .collect();
+        let meta = if meta.is_empty() { format_size(facts.size) } else { meta.join(" · ") };
+        let hit = library.hit(id, &self.filter.search).map(|hit| hit_label(&hit, cx));
         v_flex()
             .id(("asset", ix))
             .test_support()
@@ -535,27 +724,28 @@ impl LibraryView {
                 transparent_black()
             })
             .hover(|this| this.bg(theme.list_hover))
-            .child(thumbnail(facts.kinds.first().copied(), px(124.), theme))
-            .child(div().text_sm().truncate().child(item.title.clone()))
-            .child(
-                h_flex()
-                    .gap_1()
+            .child(cover(library, id, px(150.), theme))
+            .child(div().text_sm().font_medium().line_clamp(2).child(item.title.clone()))
+            .child(div().text_xs().text_color(theme.muted_foreground).truncate().child(meta))
+            .children(hit.map(|hit| {
+                div()
+                    .id(("hit", ix))
+                    .test_support()
+                    .px_1()
+                    .rounded_sm()
                     .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(format_size(facts.size)),
-            )
-            .on_click(cx.listener(move |this, event: &ClickEvent, _, cx| {
-                if event.click_count() >= 2 {
-                    this.open_page(id, cx);
-                } else {
-                    this.select(id, cx);
-                }
+                    .bg(theme.accent)
+                    .text_color(theme.accent_foreground)
+                    .truncate()
+                    .child(hit)
             }))
+            .on_click(cx.listener(move |this, _, window, cx| this.select(Some(id), window, cx)))
             .into_any_element()
     }
 
     fn render_main(&self, store: &LibraryStore, cx: &Context<Self>) -> Div {
         let muted = cx.theme().muted_foreground;
+        let total = store.snapshot().map_or(0, |library| library.items().len());
         let body = match store.snapshot() {
             None => centered("library-error", tr!(cx, "empty.no_library"), muted),
             Some(library) if library.items().is_empty() => {
@@ -564,180 +754,241 @@ impl LibraryView {
             Some(_) if self.rows.is_empty() => {
                 centered("no-results", tr!(cx, "empty.no_results"), muted)
             }
-            Some(_) => match self.layout {
-                Layout::Grid => self.render_grid(cx),
-                Layout::Table => div()
-                    .id("asset-table")
-                    .test_support()
-                    .flex_1()
-                    .min_h_0()
-                    .child(DataTable::new(&self.table))
-                    .into_any_element(),
-            },
+            Some(_) => self.render_grid(cx),
         };
         v_flex()
-            .size_full()
-            .child(self.render_toolbar(cx))
+            .flex_1()
+            .min_w_0()
+            .h_full()
+            .when(total > 0, |this| this.child(self.render_results_bar(total, cx)))
             .child(body)
-            .child(self.render_status(store, cx))
     }
 
     fn render_detail(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Option<AnyElement> {
+        let theme = cx.theme();
         let item = library.item(id)?;
+        let facts = library.facts(id).cloned().unwrap_or_default();
+        let subtitle: Vec<String> = [
+            facts.shop.clone(),
+            facts.attribute(FacetKey::Version).map(|version| format!("v{version}")),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         let header = h_flex()
             .justify_between()
             .items_start()
             .gap_2()
-            .child(div().font_semibold().min_w_0().child(item.title.clone()))
             .child(
-                h_flex()
+                v_flex()
+                    .min_w_0()
                     .gap_1()
-                    .child(
-                        Button::new("open-page")
-                            .ghost()
-                            .compact()
-                            .icon(IconName::Maximize)
-                            .tooltip(tr!(cx, "action.open"))
-                            .on_click(cx.listener(move |this, _, _, cx| this.open_page(id, cx))),
-                    )
-                    .child(
-                        Button::new("close-detail")
-                            .ghost()
-                            .compact()
-                            .icon(IconName::Close)
-                            .tooltip(tr!(cx, "action.close"))
-                            .on_click(cx.listener(|this, _, _, cx| {
-                                this.selected = None;
-                                cx.notify();
-                            })),
-                    ),
+                    .child(div().text_lg().font_semibold().child(item.title.clone()))
+                    .when(!subtitle.is_empty(), |this| {
+                        this.child(div().text_sm().text_color(theme.muted_foreground).child(subtitle.join(" · ")))
+                    }),
+            )
+            .child(
+                Button::new("close-detail")
+                    .ghost()
+                    .compact()
+                    .icon(IconName::Close)
+                    .tooltip(tr!(cx, "action.close"))
+                    .on_click(cx.listener(|this, _, window, cx| this.select(None, window, cx))),
             );
         Some(
             v_flex()
                 .id("detail")
                 .test_support()
-                .size_full()
+                .w(px(DETAIL_WIDTH))
+                .flex_shrink_0()
+                .h_full()
                 .overflow_y_scroll()
-                .gap_4()
+                .gap_5()
                 .p_4()
+                .border_l_1()
+                .border_color(theme.border)
                 .child(header)
-                .child(self.render_overview(id, library, cx))
-                .child(render_files(id, library, cx))
+                .child(cover(library, id, px(200.), theme))
+                .child(self.render_attributes(id, library, cx))
+                .child(self.render_tags(id, library, cx))
+                .child(self.render_folders(id, library, cx))
+                .child(self.render_files(id, library, cx))
                 .into_any_element(),
         )
     }
 
-    fn render_overview(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
+    fn render_attributes(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
-        if library.item(id).is_none() {
-            return div();
-        }
         let facts = library.facts(id).cloned().unwrap_or_default();
-
-        let tags = h_flex().flex_wrap().gap_1().children(library.tags_of(id).into_iter().map(
-            |tag| {
-                let tag_id = tag.id;
-                removable(format!("remove-tag-{}", tag_id.0), format!("# {}", tag.name), cx)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.change(cx, move |library| library.untag(&item_node(id), tag_id));
-                    }))
-            },
-        ));
-
-        let folders = h_flex().flex_wrap().gap_1().children(
-            library.folders_of(id).into_iter().map(|folder| {
-                let folder_id = folder.id;
-                removable(format!("remove-folder-{}", folder_id.0), folder.name.clone(), cx)
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        this.change(cx, move |library| library.remove_from_folder(id, folder_id));
-                    }))
-            }),
-        );
-
-        v_flex()
-            .gap_4()
-            .child(thumbnail(facts.kinds.first().copied(), px(160.), theme))
+        let mut chips = h_flex().flex_wrap().gap_1();
+        for (ix, (key, value)) in facts.attributes.iter().cloned().enumerate() {
+            let label = match key {
+                FacetKey::Version => format!("v{value}"),
+                _ => value.clone(),
+            };
+            chips = chips.child(
+                removable(format!("remove-attribute-{ix}"), label, true, cx).on_click(cx.listener(
+                    move |this, _, _, cx| {
+                        let value = value.clone();
+                        this.change(cx, move |library| library.remove_facet(&item_node(id), key, &value));
+                    },
+                )),
+            );
+        }
+        if let Some(shop) = facts.shop.clone() {
+            chips = chips.child(chip(shop, theme));
+        }
+        let empty = facts.attributes.is_empty() && facts.shop.is_none();
+        section(tr!(cx, "item.attributes"))
             .child(
-                section(tr!(cx, "item.tags"))
-                    .child(tags)
-                    .child(Input::new(&self.tag_input).id("tag-input").small()),
+                div()
+                    .text_xs()
+                    .text_color(theme.muted_foreground)
+                    .child(tr!(cx, "item.attributes_hint")),
             )
-            .child(
-                section(tr!(cx, "item.folders"))
-                    .child(folders)
-                    .child(Input::new(&self.folder_input).id("folder-input").small()),
-            )
+            .child(chips)
+            .when(empty, |this| {
+                this.child(div().text_sm().text_color(theme.muted_foreground).child(tr!(cx, "item.no_attributes")))
+            })
     }
 
-    fn render_page(
-        &self,
-        id: ItemId,
-        tab: DetailTab,
-        library: &Snapshot,
-        cx: &Context<Self>,
-    ) -> Option<AnyElement> {
+    fn render_tags(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
-        let item = library.item(id)?;
-        let selected = DETAIL_TABS
-            .iter()
-            .position(|candidate| *candidate == tab)
-            .unwrap_or(0);
-        let body = match tab {
-            DetailTab::Overview => self.render_overview(id, library, cx),
-            DetailTab::Files => render_files(id, library, cx),
-        };
-        Some(
-            v_flex()
-                .id("item-page")
-                .test_support()
-                .size_full()
-                .child(
+        let own = library.tags_of(id);
+        let tags = h_flex().flex_wrap().gap_1().children(own.iter().map(|tag| {
+            let tag_id = tag.id;
+            removable(format!("remove-tag-{}", tag_id.0), format!("#{}", tag.name), false, cx).on_click(
+                cx.listener(move |this, _, _, cx| {
+                    this.change(cx, move |library| library.untag(&item_node(id), tag_id));
+                }),
+            )
+        }));
+        let draft = self.tag_input.read(cx).value();
+        let suggestions: Vec<(String, usize)> = library
+            .suggest_tags(&draft)
+            .into_iter()
+            .filter(|(tag, _)| !own.iter().any(|mine| mine.id == tag.id))
+            .take(SUGGESTIONS)
+            .map(|(tag, count)| (tag.name.clone(), count))
+            .collect();
+        let prompt = if draft.trim().is_empty() { tr!(cx, "tag.common") } else { tr!(cx, "tag.similar") };
+        let similar = !draft.trim().is_empty() && !suggestions.is_empty();
+        section(tr!(cx, "item.my_tags"))
+            .child(tags)
+            .when(own.is_empty(), |this| {
+                this.child(div().text_sm().text_color(theme.muted_foreground).child(tr!(cx, "item.no_tags")))
+            })
+            .child(Input::new(&self.tag_input).id("tag-input").small())
+            .when(!suggestions.is_empty(), |this| {
+                this.child(
                     h_flex()
-                        .gap_3()
+                        .id("tag-suggestions")
+                        .test_support()
+                        .flex_wrap()
+                        .gap_1()
                         .items_center()
-                        .px_4()
-                        .py_2()
-                        .border_b_1()
-                        .border_color(theme.border)
-                        .child(
-                            Button::new("back")
-                                .ghost()
-                                .compact()
-                                .icon(IconName::ChevronLeft)
-                                .label(tr!(cx, "nav.library"))
-                                .on_click(cx.listener(|this, _, _, cx| {
-                                    this.page = None;
-                                    cx.notify();
-                                })),
-                        )
-                        .child(div().text_lg().font_semibold().truncate().child(item.title.clone())),
-                )
-                .child(
-                    TabBar::new("detail-tabs")
-                        .underline()
-                        .px_4()
-                        .selected_index(selected)
-                        .children(DETAIL_TABS.iter().map(|tab| Tab::new().label(tab.label(cx))))
-                        .on_click(cx.listener(|this, ix: &usize, _, cx| {
-                            if let (Some((id, _)), Some(tab)) =
-                                (this.page, DETAIL_TABS.get(*ix))
-                            {
-                                this.page = Some((id, *tab));
-                                cx.notify();
-                            }
+                        .p_1()
+                        .rounded_md()
+                        .when(similar, |this| this.bg(theme.warning.opacity(0.15)))
+                        .child(div().text_xs().text_color(theme.muted_foreground).child(prompt))
+                        .children(suggestions.into_iter().enumerate().map(|(ix, (name, count))| {
+                            Button::new(("suggest-tag", ix))
+                                .outline()
+                                .xsmall()
+                                .label(format!("#{name}  {count}"))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.use_tag(name.clone(), window, cx);
+                                }))
                         })),
                 )
-                .child(
-                    div()
-                        .id("page-body")
-                        .flex_1()
-                        .min_h_0()
-                        .overflow_y_scroll()
-                        .p_6()
-                        .child(div().max_w(px(720.)).child(body)),
-                )
-                .into_any_element(),
-        )
+            })
+    }
+
+    fn render_folders(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
+        let folders = h_flex().flex_wrap().gap_1().children(library.folders_of(id).into_iter().map(|folder| {
+            let folder_id = folder.id;
+            removable(format!("remove-folder-{}", folder_id.0), folder.name.clone(), false, cx).on_click(
+                cx.listener(move |this, _, _, cx| {
+                    this.change(cx, move |library| library.remove_from_folder(id, folder_id));
+                }),
+            )
+        }));
+        section(tr!(cx, "item.folders"))
+            .child(folders)
+            .child(Input::new(&self.folder_input).id("folder-input").small())
+    }
+
+    fn render_files(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
+        let theme = cx.theme();
+        let hit_file = match library.hit(id, &self.filter.search) {
+            Some(Hit::File(name)) => Some(name),
+            Some(Hit::Tag { file, .. }) => file,
+            _ => None,
+        };
+        let mut list = section(tr!(cx, "item.files"));
+        for (ix, file) in library.files(id).into_iter().enumerate() {
+            let name = shown_name(file.file).to_owned();
+            let present = file
+                .locations
+                .iter()
+                .find(|location| location.state == LocationState::Present)
+                .map(|location| library.location_path(location));
+            let tags: Vec<String> = library
+                .file_tags(id, file.blob.id)
+                .into_iter()
+                .map(|tag| format!("#{}", tag.name))
+                .collect();
+            let highlighted = hit_file.as_deref().is_some_and(|hit| hit == name || hit == file.file.file_name);
+            list = list.child(
+                h_flex()
+                    .id(("file", ix))
+                    .test_support()
+                    .gap_2()
+                    .items_center()
+                    .px_1()
+                    .rounded_md()
+                    .text_sm()
+                    .when(highlighted, |this| this.bg(theme.warning.opacity(0.2)))
+                    .child(div().flex_1().min_w_0().truncate().child(name))
+                    .when(file.file.extracted_from_blob_id.is_some(), |this| {
+                        this.child(badge(tr!(cx, "file.extracted"), theme))
+                    })
+                    .when(present.is_none(), |this| this.child(badge(tr!(cx, "file.missing"), theme)))
+                    .children(tags.into_iter().map(|tag| badge(tag, theme)))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(theme.muted_foreground)
+                            .child(format_size(file.blob.size)),
+                    )
+                    .children(present.map(|path| {
+                        Button::new(("reveal", ix))
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::FolderOpen)
+                            .tooltip(tr!(cx, "action.reveal"))
+                            .on_click(move |_, _, cx| cx.reveal_path(Path::new(&path)))
+                    })),
+            );
+        }
+        let hints = library.hints(id);
+        if hints.extracted > 0 {
+            list = list.child(hint(tr!(cx, "hint.extracted", count = hints.extracted), theme));
+        }
+        if hints.duplicates > 0 {
+            list = list.child(hint(tr!(cx, "hint.duplicates", count = hints.duplicates), theme));
+        }
+        for (ix, (other, version)) in hints.versions.into_iter().enumerate() {
+            list = list.child(
+                Button::new(("other-version", ix))
+                    .ghost()
+                    .small()
+                    .label(tr!(cx, "hint.version", version = version))
+                    .on_click(cx.listener(move |this, _, window, cx| this.select(Some(other), window, cx))),
+            );
+        }
+        list
     }
 }
 
@@ -745,71 +996,53 @@ impl Render for LibraryView {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let store = self.store.read(cx);
         let library = store.snapshot();
-        let content = match (self.page, library) {
-            (Some((id, tab)), Some(library)) => self.render_page(id, tab, library, cx),
-            _ => None,
-        };
-        let content = content.unwrap_or_else(|| {
-            let detail = self
-                .selected
-                .zip(library)
-                .and_then(|(id, library)| self.render_detail(id, library, cx));
-            let filters = match library {
-                Some(library) => self.render_filters(library, cx),
-                None => div().id("filters"),
-            };
-            h_resizable("library-columns")
-                .child(
-                    resizable_panel()
-                        .size(px(220.))
-                        .size_range(px(160.)..px(400.))
-                        .fixed()
-                        .child(filters.test_support()),
-                )
-                .child(resizable_panel().child(self.render_main(store, cx)))
-                .child(
-                    resizable_panel()
-                        .size(px(320.))
-                        .size_range(px(260.)..px(560.))
-                        .fixed()
-                        .visible(detail.is_some())
-                        .children(detail),
-                )
-                .into_any_element()
-        });
-        div()
+        let nav = library.filter(|_| self.nav_open).map(|library| self.render_nav(library, cx));
+        let detail = self
+            .selected
+            .zip(library)
+            .and_then(|(id, library)| self.render_detail(id, library, cx));
+        v_flex()
+            .id("library")
+            .test_support()
             .size_full()
             .on_drop(cx.listener(|this, paths: &ExternalPaths, _, cx| {
                 this.add_paths(paths.paths().to_vec(), cx);
             }))
-            .child(content)
+            .child(self.render_top_bar(cx))
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .children(nav)
+                    .child(self.render_main(store, cx))
+                    .children(detail),
+            )
+            .child(self.render_status(store, cx))
     }
 }
 
-fn render_files(id: ItemId, library: &Snapshot, cx: &App) -> Div {
-    let theme = cx.theme();
-    let mut list = section(tr!(cx, "item.files"));
-    for file in library.files(id) {
-        let missing = file
-            .locations
-            .first()
-            .is_none_or(|location| location.state != LocationState::Present);
-        list = list.child(
-            h_flex()
-                .gap_2()
-                .items_center()
-                .text_sm()
-                .child(div().flex_1().min_w_0().truncate().child(file.file.file_name.clone()))
-                .when(missing, |this| this.child(badge(tr!(cx, "file.missing"), theme)))
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
-                        .child(format_size(file.blob.size)),
-                ),
-        );
+fn code_page(locale: &str) -> CodePage {
+    match locale {
+        "ja" => CodePage::Japanese,
+        "zh-CN" => CodePage::SimplifiedChinese,
+        "zh-TW" => CodePage::TraditionalChinese,
+        "ko" => CodePage::Korean,
+        _ => CodePage::Other,
     }
-    list
+}
+
+fn folder_name(path: &str) -> String {
+    Path::new(path)
+        .file_name()
+        .map_or_else(|| path.to_owned(), |name| name.to_string_lossy().into_owned())
+}
+
+fn hit_label(hit: &Hit, cx: &App) -> SharedString {
+    match hit {
+        Hit::File(name) | Hit::Attribute(name) => tr!(cx, "hit.match", name = name),
+        Hit::Tag { name, file: None } => tr!(cx, "hit.tag", name = name),
+        Hit::Tag { name, file: Some(file) } => tr!(cx, "hit.tag_in", name = name, file = file),
+    }
 }
 
 fn filter_group(label: SharedString, action: Option<Button>) -> Div {
@@ -830,12 +1063,24 @@ fn section(label: SharedString) -> Div {
         .child(div().text_xs().font_semibold().opacity(0.6).child(label))
 }
 
-fn removable(id: String, label: impl Into<SharedString>, cx: &App) -> Button {
-    Button::new(SharedString::from(id))
-        .outline()
+fn removable(id: String, label: impl Into<SharedString>, light: bool, cx: &App) -> Button {
+    let button = Button::new(SharedString::from(id))
         .compact()
+        .small()
         .label(format!("{}  ×", label.into()))
-        .tooltip(tr!(cx, "action.remove"))
+        .tooltip(tr!(cx, "action.remove"));
+    if light { button.ghost() } else { button.outline() }
+}
+
+fn chip(text: impl Into<SharedString>, theme: &Theme) -> Div {
+    div()
+        .px_2()
+        .py_0p5()
+        .rounded_md()
+        .text_sm()
+        .bg(theme.muted)
+        .text_color(theme.muted_foreground)
+        .child(text.into())
 }
 
 fn badge(text: impl Into<SharedString>, theme: &Theme) -> Div {
@@ -846,6 +1091,17 @@ fn badge(text: impl Into<SharedString>, theme: &Theme) -> Div {
         .bg(theme.accent)
         .text_color(theme.accent_foreground)
         .child(text.into())
+}
+
+fn hint(text: SharedString, theme: &Theme) -> Div {
+    div()
+        .px_2()
+        .py_1()
+        .rounded_md()
+        .text_xs()
+        .bg(theme.muted)
+        .text_color(theme.muted_foreground)
+        .child(text)
 }
 
 fn centered(id: &'static str, text: SharedString, color: Hsla) -> AnyElement {
@@ -861,22 +1117,42 @@ fn centered(id: &'static str, text: SharedString, color: Hsla) -> AnyElement {
         .into_any_element()
 }
 
-fn thumbnail(kind: Option<FileKind>, height: Pixels, theme: &Theme) -> Div {
+fn cover(library: &Snapshot, id: ItemId, height: Pixels, theme: &Theme) -> Div {
+    let file = library.main_file(id);
+    let file_name = file.map(shown_name);
+    let kind = file
+        .and_then(|file| library.files(id).into_iter().find(|view| view.file.blob_id == file.blob_id))
+        .map(|view| FileKind::from(view.blob.kind));
     let icon = match kind {
         Some(FileKind::UnityPackage | FileKind::Model) => IconName::Frame,
         Some(FileKind::Archive) => IconName::FolderClosed,
         Some(FileKind::Image) => IconName::GalleryVerticalEnd,
         Some(FileKind::Other) | None => IconName::File,
     };
+    let extension = file_name
+        .and_then(|name| name.rsplit_once('.'))
+        .map(|(_, extension)| extension.to_uppercase());
     v_flex()
         .w_full()
         .h(height)
+        .flex_shrink_0()
+        .gap_1()
+        .p_2()
         .rounded_md()
         .bg(theme.muted)
         .items_center()
         .justify_center()
         .text_color(theme.muted_foreground)
         .child(Icon::new(icon).size(px(28.)))
+        .children(extension.map(|extension| div().text_xs().font_semibold().child(extension)))
+        .children(file_name.map(|name| {
+            div()
+                .w_full()
+                .text_xs()
+                .text_center()
+                .line_clamp(2)
+                .child(name.to_owned())
+        }))
 }
 
 fn format_size(bytes: i64) -> String {
