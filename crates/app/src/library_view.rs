@@ -19,7 +19,7 @@ use snowcase_core::snapshot::{Filter, Scope, SortKey};
 use snowcase_core::{FacetKey, ItemId, StoreError};
 
 use crate::i18n::{Locale, tr};
-use crate::library_store::LibraryStore;
+use crate::library_store::{LibraryChanged, LibraryStore};
 
 pub(crate) use detail::{BoothStatus, TreeNode};
 
@@ -117,7 +117,8 @@ impl LibraryView {
                 .map(|field| (field, cx.new(|cx| SelectState::new(Vec::new(), None, window, cx))))
                 .collect();
         let mut subscriptions = vec![
-            cx.observe_in(&store, window, |this, _, window, cx| {
+            cx.observe(&store, |_, _, cx| cx.notify()),
+            cx.subscribe_in(&store, window, |this, _, _: &LibraryChanged, window, cx| {
                 this.refresh_choices(window, cx);
                 this.refresh(cx);
             }),

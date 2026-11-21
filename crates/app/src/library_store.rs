@@ -48,6 +48,10 @@ struct Scanning {
     unsupported: Vec<String>,
 }
 
+pub struct LibraryChanged;
+
+impl EventEmitter<LibraryChanged> for LibraryStore {}
+
 pub struct LibraryStore {
     snapshot: Option<Arc<Snapshot>>,
     scanning: Scanning,
@@ -303,8 +307,12 @@ impl LibraryStore {
                 let latest = sequence > this.shown;
                 if latest {
                     this.shown = sequence;
+                    let changed = this.snapshot.as_ref().is_none_or(|shown| !Arc::ptr_eq(shown, &snapshot));
                     this.snapshot = Some(snapshot);
                     this.error = None;
+                    if changed {
+                        cx.emit(LibraryChanged);
+                    }
                 }
                 let value = result
                     .map_err(|error| {

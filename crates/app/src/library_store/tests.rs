@@ -172,3 +172,19 @@ fn work_found_while_a_run_is_going_is_picked_up_when_it_ends(cx: &mut TestAppCon
     assert_eq!(pending(&store, cx), 0);
     assert!(!progress(&store, cx).running);
 }
+
+#[gpui_kit::test]
+fn background_progress_does_not_announce_a_new_library_for_every_file(cx: &mut TestAppContext) {
+    let (store, _dirs) = scanned(6, cx);
+    let changes = std::rc::Rc::new(std::cell::Cell::new(0));
+    let counted = changes.clone();
+    let _subscription = cx.update(|cx| {
+        cx.subscribe(&store, move |_, _: &super::LibraryChanged, _| counted.set(counted.get() + 1))
+    });
+
+    store.update(cx, |store, cx| store.start_background(cx));
+    cx.run_until_parked();
+
+    assert_eq!(progress(&store, cx).done, 6);
+    assert_eq!(changes.get(), 1, "one batch of results, one change");
+}
