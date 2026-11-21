@@ -349,7 +349,7 @@ fn a_tag_on_a_file_finds_its_item_and_spellings_share_one_tag() {
         Some(Hit::Tag { name: "Olive Branch".into(), file: Some("Gloves.unitypackage".into()) })
     );
     library.untag(&item_node(gloves), olive).unwrap();
-    assert!(library.tags_of(gloves).is_empty());
+    assert!(library.item_tags(gloves).is_empty());
     assert_eq!(titles(&library.query(&tagged, SortKey::Name)), ["Gloves"]);
 }
 
@@ -448,7 +448,7 @@ fn merging_moves_files_tags_folders_and_user_values_and_drops_the_other_item() {
 
     assert!(library.item(hair).is_none());
     assert_eq!(library.files(gloves).len(), 2);
-    assert!(library.tags_of(gloves).iter().any(|tag| tag.name == "winter"));
+    assert!(library.item_tags(gloves).iter().any(|tag| tag.name == "winter"));
     assert_eq!(library.file_tags(gloves, hair_blob)[0].name, "olive");
     assert_eq!(library.folders_of(gloves)[0].name, "Avatars");
     let values = |key| -> Vec<String> { library.facets(&item_node(gloves), key).into_iter().map(|facet| facet.value).collect() };

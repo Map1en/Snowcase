@@ -155,7 +155,7 @@ fn the_detail_drawer_adds_tags_by_enter_comma_or_suggestion(cx: &mut TestAppCont
     let (window, view) = open_library(library, cx);
     let id = read(&view, cx, |view, _| view.rows[0]);
     let names = |view: &Entity<LibraryView>, cx: &mut TestAppContext| -> Vec<String> {
-        read(view, cx, |_, library| library.tags_of(id).iter().map(|tag| tag.name.clone()).collect())
+        read(view, cx, |_, library| library.item_tags(id).iter().map(|tag| tag.name.clone()).collect())
     };
     let before = names(&view, cx);
 
@@ -176,7 +176,7 @@ fn the_detail_drawer_adds_tags_by_enter_comma_or_suggestion(cx: &mut TestAppCont
     assert!(exists(window, "tag-suggestions", cx));
     click(window, ("suggest-tag", 0usize), cx);
     read(&view, cx, |_, library| {
-        assert!(library.tags_of(other).iter().any(|tag| tag.name == "black tights"));
+        assert!(library.item_tags(other).iter().any(|tag| tag.name == "black tights"));
     });
 
     click(window, "close-detail", cx);

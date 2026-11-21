@@ -1031,7 +1031,7 @@ impl LibraryView {
 
     fn render_tags(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
-        let own = library.tags_of(id);
+        let own = library.item_tags(id);
         let tags = h_flex().flex_wrap().gap_1().children(own.iter().map(|tag| {
             let tag_id = tag.id;
             removable(format!("remove-tag-{}", tag_id.0), format!("#{}", tag.name), false, cx).on_click(

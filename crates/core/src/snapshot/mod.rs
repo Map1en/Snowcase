@@ -152,7 +152,7 @@ impl Snapshot {
             .map(|ix| &self.catalog.node_tags[*ix])
     }
 
-    pub fn tags_of(&self, id: ItemId) -> Vec<&Tag> {
+    pub fn item_tags(&self, id: ItemId) -> Vec<&Tag> {
         let mut tags: Vec<&Tag> = self
             .node_tags_of(id)
             .filter(|link| link.blob_id.is_none())
@@ -175,7 +175,7 @@ impl Snapshot {
             .tags
             .iter()
             .map(|tag| {
-                let count = self.facts.values().filter(|facts| facts.tags.contains(&tag.id)).count();
+                let count = self.facts.values().filter(|facts| facts.all_tags.contains(&tag.id)).count();
                 (tag, count)
             })
             .filter(|(_, count)| *count > 0)

@@ -7,7 +7,7 @@ use super::{item_node, resolve};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ItemFacts {
-    pub tags: BTreeSet<TagId>,
+    pub all_tags: BTreeSet<TagId>,
     pub folders: BTreeSet<FolderId>,
     pub size: i64,
     pub file_count: usize,
@@ -68,7 +68,7 @@ pub(crate) fn facts_of(catalog: &Catalog, wanted: impl Fn(ItemId) -> bool) -> Ha
     }
     for link in &catalog.node_tags {
         if let Some(entry) = facts.get_mut(&link.item_id) {
-            entry.tags.insert(link.tag_id);
+            entry.all_tags.insert(link.tag_id);
         }
     }
     for link in &catalog.item_folders {

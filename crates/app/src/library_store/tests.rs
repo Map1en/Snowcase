@@ -16,7 +16,7 @@ fn first_item(store: &Entity<LibraryStore>, cx: &mut TestAppContext) -> snowcase
 
 fn tags(store: &Entity<LibraryStore>, id: snowcase_core::ItemId, cx: &mut TestAppContext) -> Vec<String> {
     store.read_with(cx, |store, _| {
-        store.snapshot().unwrap().tags_of(id).iter().map(|tag| tag.name.clone()).collect()
+        store.snapshot().unwrap().item_tags(id).iter().map(|tag| tag.name.clone()).collect()
     })
 }
 
@@ -29,7 +29,7 @@ fn writes_run_in_the_background_and_apply_in_order(cx: &mut TestAppContext) {
         store.change(cx, move |library| library.tag(&item_node(id), "first")).detach();
         store.change(cx, move |library| library.tag(&item_node(id), "second")).detach();
         store.change(cx, move |library| {
-            let tag = library.tags_of(id).iter().find(|tag| tag.name == "first").unwrap().id;
+            let tag = library.item_tags(id).iter().find(|tag| tag.name == "first").unwrap().id;
             library.untag(&item_node(id), tag)
         })
         .detach();

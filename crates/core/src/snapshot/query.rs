@@ -102,7 +102,7 @@ impl Snapshot {
             && wanted(FacetKey::Category, &filter.category)
             && wanted(FacetKey::Target, &filter.target)
             && filter.shop.as_ref().is_none_or(|shop| facts.shop.as_ref() == Some(shop))
-            && filter.tag.is_none_or(|tag| facts.tags.contains(&tag));
+            && filter.tag.is_none_or(|tag| facts.all_tags.contains(&tag));
         fits && (needle.is_empty()
             || item.title.to_lowercase().contains(needle)
             || facts.shop.as_ref().is_some_and(|shop| shop.to_lowercase().contains(needle))
@@ -116,7 +116,7 @@ impl Snapshot {
             return None;
         }
         let found = |text: &str| text.to_lowercase().contains(&needle);
-        let any_tag = facts.tags.iter().any(|tag| self.tag(*tag).is_some_and(|tag| found(&tag.name)));
+        let any_tag = facts.all_tags.iter().any(|tag| self.tag(*tag).is_some_and(|tag| found(&tag.name)));
         let tagged = self
             .node_tags_of(id)
             .filter(|_| any_tag)

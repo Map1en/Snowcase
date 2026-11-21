@@ -9,7 +9,7 @@ fn snapshot(fixture: &Fixture) -> Vec<(String, usize, usize)> {
         .into_iter()
         .map(|item| {
             let facts = library.facts(item.id).unwrap();
-            (item.title.clone(), facts.file_count, facts.tags.len())
+            (item.title.clone(), facts.file_count, facts.all_tags.len())
         })
         .collect()
 }
@@ -26,7 +26,7 @@ fn a_seeded_library_covers_the_states_tests_rely_on() {
     let library = &fixture.library;
 
     assert_eq!(library.count(&Scope::All), 120);
-    assert!(library.items().iter().any(|item| library.tags_of(item.id).is_empty()));
+    assert!(library.items().iter().any(|item| library.item_tags(item.id).is_empty()));
     let tree: Vec<_> = library
         .folder_tree()
         .iter()
@@ -50,7 +50,7 @@ fn everything(library: &Library) -> Vec<ItemView> {
             (
                 item.title.clone(),
                 library.facts(item.id).cloned(),
-                library.tags_of(item.id).iter().map(|tag| tag.name.clone()).collect(),
+                library.item_tags(item.id).iter().map(|tag| tag.name.clone()).collect(),
                 library.folders_of(item.id).iter().map(|folder| folder.name.clone()).collect(),
             )
         })
