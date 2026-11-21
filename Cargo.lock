@@ -6859,10 +6859,20 @@ dependencies = [
  "futures",
  "gpui-kit",
  "rust-i18n",
+ "snowcase-booth",
  "snowcase-core",
  "snowcase-testing",
  "sys-locale",
  "tempfile",
+]
+
+[[package]]
+name = "snowcase-booth"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "ureq",
 ]
 
 [[package]]
@@ -6875,14 +6885,12 @@ dependencies = [
  "flate2",
  "regex",
  "serde",
- "serde_json",
  "snowcase-formats",
  "snowcase-store",
  "tar",
  "tempfile",
  "thiserror 2.0.21",
  "unicode-normalization",
- "ureq",
  "zip",
 ]
 

@@ -487,14 +487,13 @@ fn merging_moves_files_tags_folders_and_user_values_and_drops_the_other_item() {
 fn linking_a_booth_page_sets_title_shop_link_and_a_stored_cover() {
     let (dir, mut library) = sample();
     let gloves = id_of(&library, "Gloves");
-    let booth = crate::booth::BoothItem {
-        id: 7,
+    let booth = StorePage {
+        external_id: "7".into(),
         name: "Sample Gloves".into(),
         shop: "Sample Shop".into(),
         url: "https://shop.booth.pm/items/7".into(),
-        image: Some("https://booth.pximg.net/a/1.jpg".into()),
     };
-    let picture = crate::booth::Picture {
+    let picture = Picture {
         bytes: b"jpeg bytes".to_vec(),
         mime: "image/jpeg".into(),
     };

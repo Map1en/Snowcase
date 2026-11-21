@@ -399,14 +399,13 @@ fn a_link_that_is_not_booth_is_refused_without_going_online(cx: &mut TestAppCont
 fn a_linked_item_shows_its_booth_page_shop_and_cover(cx: &mut TestAppContext) {
     let Fixture { mut library, dir: _dir } = fixtures::library(3, 5);
     let id = library.items()[0].id;
-    let booth = snowcase_core::booth::BoothItem {
-        id: 7,
+    let booth = snowcase_core::library::StorePage {
+        external_id: "7".into(),
         name: "Sample Outfit".into(),
         shop: "Sample Shop".into(),
         url: "https://shop.booth.pm/items/7".into(),
-        image: None,
     };
-    let picture = snowcase_core::booth::Picture { bytes: b"not really a jpeg".to_vec(), mime: "image/jpeg".into() };
+    let picture = snowcase_core::library::Picture { bytes: b"not really a jpeg".to_vec(), mime: "image/jpeg".into() };
     library.link_booth(id, &booth, Some(&picture)).unwrap();
     let (window, view) = open_library(library, cx);
     let ix = read(&view, cx, |view, _| view.rows.iter().position(|row| *row == id).unwrap());

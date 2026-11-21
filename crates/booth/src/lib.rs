@@ -12,7 +12,7 @@ pub struct BoothItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Picture {
+pub struct Image {
     pub bytes: Vec<u8>,
     pub mime: String,
 }
@@ -24,7 +24,7 @@ struct Page {
     url: String,
     shop: Shop,
     #[serde(default)]
-    images: Vec<Image>,
+    images: Vec<PageImage>,
 }
 
 #[derive(Deserialize)]
@@ -33,7 +33,7 @@ struct Shop {
 }
 
 #[derive(Deserialize)]
-struct Image {
+struct PageImage {
     original: String,
 }
 
@@ -62,7 +62,7 @@ pub fn parse_item(json: &str) -> Result<BoothItem, String> {
     })
 }
 
-pub fn fetch(id: u64) -> Result<(BoothItem, Option<Picture>), String> {
+pub fn fetch(id: u64) -> Result<(BoothItem, Option<Image>), String> {
     let get = |url: &str| ureq::get(url).header("User-Agent", USER_AGENT).call().map_err(|error| error.to_string());
     let json = get(&format!("https://booth.pm/ja/items/{id}.json"))?
         .body_mut()
@@ -79,7 +79,7 @@ pub fn fetch(id: u64) -> Result<(BoothItem, Option<Picture>), String> {
                 .unwrap_or("image/jpeg")
                 .to_owned();
             let bytes = response.body_mut().read_to_vec().map_err(|error| error.to_string())?;
-            Some(Picture { bytes, mime })
+            Some(Image { bytes, mime })
         }
         _ => None,
     };

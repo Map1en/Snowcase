@@ -16,7 +16,19 @@ use snowcase_store::{
     Root, RootId, ScannedPackage, Store, StoreError, StoreKind, Tag, TagId,
 };
 
-use crate::booth::{BoothItem, Picture};
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorePage {
+    pub external_id: String,
+    pub name: String,
+    pub shop: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Picture {
+    pub bytes: Vec<u8>,
+    pub mime: String,
+}
 
 const MEDIA: &str = "media";
 
@@ -406,7 +418,7 @@ impl Library {
         self.refresh_items(&[id])
     }
 
-    pub fn link_booth(&mut self, id: ItemId, booth: &BoothItem, picture: Option<&Picture>) -> Result<(), StoreError> {
+    pub fn link_booth(&mut self, id: ItemId, page: &StorePage, picture: Option<&Picture>) -> Result<(), StoreError> {
         let media = match picture {
             Some(picture) => {
                 let hash = blake3::hash(&picture.bytes).to_hex().to_string();
@@ -431,11 +443,11 @@ impl Library {
             store.update_item(
                 id,
                 &ItemChanges {
-                    title: Some(booth.name.clone()),
+                    title: Some(page.name.clone()),
                     note: None,
                 },
             )?;
-            store.set_store_source(id, StoreKind::Booth, &booth.url, &booth.id.to_string(), &booth.shop)?;
+            store.set_store_source(id, StoreKind::Booth, &page.url, &page.external_id, &page.shop)?;
             if let Some(media) = &media {
                 store.set_cover(id, media, ImageOrigin::Store)?;
             }

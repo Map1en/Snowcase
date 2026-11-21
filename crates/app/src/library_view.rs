@@ -11,11 +11,11 @@ use gpui_kit::component::select::{Select, SelectEvent, SelectItem, SelectState};
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
+use snowcase_booth as booth;
 use snowcase_core::library::{
-    Filter, Hit, Library, PackageSummary, Scope, Snapshot, SortKey, collect_files, inspect_file,
-    item_node, shown_name,
+    Filter, Hit, Library, PackageSummary, Picture, Scope, Snapshot, SortKey, StorePage, collect_files,
+    inspect_file, item_node, shown_name,
 };
-use snowcase_core::booth;
 use snowcase_core::names::CodePage;
 use snowcase_core::{BlobId, FacetKey, FileKind, ItemId, LocationState, RootId, StoreError};
 
@@ -312,9 +312,19 @@ impl LibraryView {
             let fetched = fetched.await;
             this.update(cx, |this, cx| {
                 match fetched {
-                    Ok((item, picture)) => {
+                    Ok((item, image)) => {
                         this.booth_status = None;
-                        this.change(cx, move |library| library.link_booth(id, &item, picture.as_ref()));
+                        let page = StorePage {
+                            external_id: item.id.to_string(),
+                            name: item.name,
+                            shop: item.shop,
+                            url: item.url,
+                        };
+                        let picture = image.map(|image| Picture {
+                            bytes: image.bytes,
+                            mime: image.mime,
+                        });
+                        this.change(cx, move |library| library.link_booth(id, &page, picture.as_ref()));
                     }
                     Err(error) => this.booth_status = Some(BoothStatus::Failed(error)),
                 }

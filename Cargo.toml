@@ -13,6 +13,7 @@ snowcase-formats = { path = "crates/formats" }
 snowcase-core = { path = "crates/core" }
 snowcase-store = { path = "crates/store" }
 snowcase-testing = { path = "crates/testing" }
+snowcase-booth = { path = "crates/booth" }
 thiserror = "2"
 tempfile = "3"
 gpui-kit = "0.9"
