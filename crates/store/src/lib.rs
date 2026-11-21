@@ -178,7 +178,7 @@ impl Store {
         Ok(catalog)
     }
 
-    fn load_roots(&mut self) -> Result<Vec<Root>> {
+    pub fn load_roots(&mut self) -> Result<Vec<Root>> {
         Ok(root::table
             .order(root::id)
             .select(Root::as_select())
@@ -433,6 +433,54 @@ impl Store {
                     facet::removed.eq(true),
                 ))
                 .execute(conn)?;
+            Ok(())
+        })
+    }
+
+    pub fn move_location(&mut self, id: LocationId, rel_path: &str, modified_ms: i64) -> Result<()> {
+        diesel::update(blob_location::table.find(id))
+            .set((
+                blob_location::rel_path.eq(rel_path),
+                blob_location::modified_ms.eq(modified_ms),
+                blob_location::state.eq(LocationState::Present),
+                blob_location::last_seen.eq(now_ms()),
+            ))
+            .execute(&mut self.conn)?;
+        Ok(())
+    }
+
+    pub fn mark_missing(&mut self, id: LocationId) -> Result<()> {
+        diesel::update(blob_location::table.find(id))
+            .set(blob_location::state.eq(LocationState::Missing))
+            .execute(&mut self.conn)?;
+        Ok(())
+    }
+
+    pub fn set_extracted_from(
+        &mut self,
+        item_id: ItemId,
+        blob_id: BlobId,
+        from: Option<(BlobId, &str)>,
+    ) -> Result<()> {
+        diesel::update(item_file::table.find((item_id, blob_id)))
+            .set((
+                item_file::extracted_from_blob_id.eq(from.map(|(blob, _)| blob)),
+                item_file::extracted_from_path.eq(from.map(|(_, path)| path)),
+            ))
+            .execute(&mut self.conn)?;
+        Ok(())
+    }
+
+    pub fn remove_item_file(&mut self, item_id: ItemId, blob_id: BlobId) -> Result<()> {
+        self.conn.transaction(|conn| {
+            diesel::delete(item_file::table.find((item_id, blob_id))).execute(conn)?;
+            let referenced: i64 = item_file::table
+                .filter(item_file::blob_id.eq(blob_id).or(item_file::extracted_from_blob_id.eq(blob_id)))
+                .count()
+                .get_result(conn)?;
+            if referenced == 0 {
+                diesel::delete(blob::table.find(blob_id)).execute(conn)?;
+            }
             Ok(())
         })
     }

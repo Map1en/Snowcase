@@ -1,9 +1,10 @@
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File};
+use std::io::BufReader;
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
-use snowcase_formats::{FileKind, guess_kind, is_junk};
+use snowcase_formats::{ArchiveEntry, FileKind, guess_kind, is_junk, list_7z, list_zip};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FoundFile {
@@ -123,6 +124,28 @@ fn join(dir: &str, name: &str) -> String {
     } else {
         format!("{dir}/{name}")
     }
+}
+
+pub fn probe(root: &Path, files: &[FoundFile]) -> HashMap<String, Vec<ArchiveEntry>> {
+    let mut listings = HashMap::new();
+    for file in files.iter().filter(|file| file.kind == FileKind::Archive) {
+        let lower = file.rel_path.to_ascii_lowercase();
+        let Ok(handle) = File::open(root.join(&file.rel_path)) else {
+            continue;
+        };
+        let reader = BufReader::new(handle);
+        let listed = if lower.ends_with(".zip") {
+            list_zip(reader).ok()
+        } else if lower.ends_with(".7z") {
+            list_7z(reader).ok()
+        } else {
+            None
+        };
+        if let Some(entries) = listed {
+            listings.insert(file.rel_path.clone(), entries);
+        }
+    }
+    listings
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

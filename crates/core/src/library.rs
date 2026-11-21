@@ -8,7 +8,7 @@ use std::time::UNIX_EPOCH;
 
 use snowcase_formats::{FileKind, HEADER_LEN, detect_kind};
 use snowcase_store::{
-    Blob, BlobKind, BlobLocation, Catalog, Facet, FacetKey, FacetNode, FacetOrigin, FacetValue,
+    Blob, BlobId, BlobKind, BlobLocation, Catalog, Facet, FacetKey, FacetNode, FacetOrigin, FacetValue,
     FileImport, Folder, FolderId, Item, ItemChanges, ItemFile, ItemId, Store, StoreError, Tag,
     TagId,
 };
@@ -342,8 +342,13 @@ impl Snapshot {
         upsert(&mut catalog.sources, rows.sources, |source| source.id);
         upsert(&mut catalog.files, rows.files, |file| (file.item_id, file.blob_id));
         upsert(&mut catalog.facets, rows.facets, |facet| facet.id);
+        let fetched: HashSet<BlobId> = rows.blobs.iter().map(|blob| blob.id).collect();
+        catalog.locations.retain(|location| !fetched.contains(&location.blob_id));
         upsert(&mut catalog.blobs, rows.blobs, |blob| blob.id);
         upsert(&mut catalog.locations, rows.locations, |location| location.id);
+        let referenced: HashSet<BlobId> = catalog.files.iter().map(|file| file.blob_id).collect();
+        catalog.blobs.retain(|blob| referenced.contains(&blob.id));
+        catalog.locations.retain(|location| referenced.contains(&location.blob_id));
         upsert(&mut catalog.images, rows.images, |image| (image.item_id, image.position));
         upsert(&mut catalog.item_tags, rows.item_tags, |link| (link.item_id, link.tag_id));
         upsert(&mut catalog.item_folders, rows.item_folders, |link| (link.item_id, link.folder_id));
@@ -643,6 +648,10 @@ fn title_of(file_name: &str) -> String {
         .filter(|stem| !stem.is_empty())
         .unwrap_or_else(|| file_name.to_owned())
 }
+
+mod scanning;
+
+pub use scanning::ScanReport;
 
 #[cfg(test)]
 mod tests;

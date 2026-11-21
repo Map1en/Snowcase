@@ -436,3 +436,42 @@ fn a_successful_transaction_commits_nested_writes_and_the_store_stays_usable() {
     assert_eq!(catalog.item_tags.len(), 1);
     assert_eq!(catalog.item_folders.len(), 1);
 }
+
+#[test]
+fn moving_and_marking_a_location_keeps_its_blob() {
+    let (_dir, mut store) = open();
+    let item = store.create_item("Gloves").unwrap();
+    let root = store.add_root("D:/BOOTH").unwrap();
+    let blob_id = store.add_file(&import(item, Some(root), "Gloves.zip", "a")).unwrap();
+    let location = store.load().unwrap().locations[0].id;
+
+    store.mark_missing(location).unwrap();
+    assert_eq!(store.load().unwrap().locations[0].state, LocationState::Missing);
+    store.move_location(location, "Accessories/Gloves.zip", 5).unwrap();
+
+    let moved = store.load().unwrap().locations.remove(0);
+    assert_eq!((moved.blob_id, moved.rel_path.as_str(), moved.modified_ms, moved.state), (blob_id, "Accessories/Gloves.zip", 5, LocationState::Present));
+}
+
+#[test]
+fn removing_an_extracted_copy_drops_its_blob_but_keeps_a_shared_or_referenced_one() {
+    let (_dir, mut store) = open();
+    let item = store.create_item("Gloves").unwrap();
+    let other = store.create_item("Set").unwrap();
+    let zip = store.add_file(&import(item, None, "D:/Gloves.zip", "z")).unwrap();
+    let copy = store.add_file(&import(item, None, "D:/Gloves/Gloves.unitypackage", "c")).unwrap();
+    let shared = store.add_file(&import(item, None, "D:/Gloves/readme.txt", "r")).unwrap();
+    store.add_file(&import(other, None, "D:/Gloves/readme.txt", "r")).unwrap();
+    store.set_extracted_from(item, copy, Some((zip, "Gloves.unitypackage"))).unwrap();
+    let catalog = store.load().unwrap();
+    let file = catalog.files.iter().find(|file| file.blob_id == copy).unwrap();
+    assert_eq!((file.extracted_from_blob_id, file.extracted_from_path.as_deref()), (Some(zip), Some("Gloves.unitypackage")));
+
+    store.remove_item_file(item, copy).unwrap();
+    store.remove_item_file(item, shared).unwrap();
+
+    let catalog = store.load().unwrap();
+    let blobs: Vec<_> = catalog.blobs.iter().map(|blob| blob.id).collect();
+    assert_eq!(blobs, [zip, shared]);
+    assert_eq!(catalog.locations.len(), 2);
+}
