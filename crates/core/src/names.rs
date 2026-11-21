@@ -62,6 +62,7 @@ static GLUED: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"()(?:(?i:ver)|V)(\d+(?:[._]\d+)+)").unwrap());
 static TRAILING: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(^|[^0-9_])_(\d+(?:_\d+)+)$").unwrap());
 static DOTTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(^|[^0-9.])(\d+(?:\.\d+)+)").unwrap());
+static SEPARATOR_RUN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ _-]{2,}").unwrap());
 static DATE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(^|[^0-9])(20\d{6}(?:\d{6})?)([^0-9]|$)").unwrap());
 
 const ROLE_WORDS: &[&str] = &[
@@ -107,6 +108,17 @@ fn without_versions(name: &str) -> String {
         name.replace_range(start..end, " ");
     }
     name
+}
+
+pub fn title_of(name: &str) -> String {
+    let stem = DUPLICATE.replace(&EXTENSIONS.replace(name, ""), "").into_owned();
+    let title = without_versions(&stem);
+    let title = SEPARATOR_RUN.replace_all(&title, |run: &regex::Captures| {
+        let run = &run[0];
+        if run.contains('_') { "_" } else if run.contains('-') { "-" } else { " " }
+    });
+    let title = title.trim_matches(|c: char| c.is_whitespace() || "_-.".contains(c));
+    if title.is_empty() { stem } else { title.to_owned() }
 }
 
 fn words(piece: &str) -> Vec<String> {

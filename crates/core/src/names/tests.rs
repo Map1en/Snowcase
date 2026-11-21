@@ -128,6 +128,27 @@ fn keys_that_are_too_generic_or_only_an_avatar_are_not_offered() {
 }
 
 #[test]
+fn titles_drop_extensions_versions_and_duplicate_suffixes_but_keep_avatar_names() {
+    let cases = [
+        ("Mafuyu_v1.0.7.zip", "Mafuyu"),
+        ("Mafuyu.Cian_NekoRibbonPoncho_v1.0.0 (1).zip", "Mafuyu.Cian_NekoRibbonPoncho"),
+        ("heyagi08_tokuA_ver1.05_20250131.zip", "heyagi08_tokuA"),
+        ("ねずみのくるみ3Dモデル1.01.zip", "ねずみのくるみ3Dモデル"),
+        ("Kipfel_1.1.0", "Kipfel"),
+        ("20250131.zip", "20250131"),
+        ("Pitti Muffler", "Pitti Muffler"),
+        ("UTS2GUI_v.2.0.8_JapaneseEdition.zip", "UTS2GUI_JapaneseEdition"),
+        ("UnlitWF_20230401_01_Core_2019.unitypackage", "UnlitWF_01_Core_2019"),
+        ("【AREN】 Kipfel cloth Texture_A", "【AREN】 Kipfel cloth Texture_A"),
+        ("シュガーワンピ【フルセット】v2.6.unitypackage", "シュガーワンピ【フルセット】"),
+        ("[Ene Collection] Sailor Maiden Mafuyu v1.0.unitypackage", "[Ene Collection] Sailor Maiden Mafuyu"),
+    ];
+    for (name, title) in cases {
+        assert_eq!(title_of(name), title, "{name}");
+    }
+}
+
+#[test]
 fn words_split_camel_case_digits_and_wide_text() {
     assert_eq!(words("NekoRibbonPoncho"), ["Neko", "Ribbon", "Poncho"]);
     assert_eq!(words("forKipfel"), ["for", "Kipfel"]);
