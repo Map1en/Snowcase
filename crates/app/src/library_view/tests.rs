@@ -58,6 +58,11 @@ fn adding_a_library_folder_scans_it_and_lists_it_on_the_left(cx: &mut TestAppCon
     });
     click(window, ("asset", 0usize), cx);
     assert!(exists(window, ("package", 0usize), cx), "the package was read in the background");
+    read(&view, cx, |_, library| {
+        assert_eq!(library.shops(), [("Shop".to_owned(), 3)], "the shop comes from the package root");
+    });
+    choose(window, "filter-shop", 0, cx);
+    assert_eq!(count(window, "asset", cx), 3);
 }
 
 #[gpui_kit::test]

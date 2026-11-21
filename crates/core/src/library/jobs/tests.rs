@@ -7,6 +7,7 @@ use flate2::write::GzEncoder;
 use zip::write::SimpleFileOptions;
 
 use super::*;
+use snowcase_store::FacetKey;
 use crate::names::CodePage;
 
 const PACKAGE: &[u8] = b"package bytes";
@@ -198,4 +199,63 @@ fn a_broken_package_is_remembered_as_failed_and_not_read_again() {
     let copy = library.files(item).into_iter().find(|view| view.file.file_name == "Outfit.unitypackage").unwrap();
     assert!(library.package_of(copy.file).unwrap().error.is_some());
     assert!(library.pending_work().is_empty());
+}
+
+fn shop_of_only_item(library: &Library) -> Vec<String> {
+    let item = library.items()[0].id;
+    library
+        .facets(&item_node(item), FacetKey::Shop)
+        .into_iter()
+        .map(|facet| facet.value)
+        .collect()
+}
+
+fn read_one_package(paths: &[&str]) -> (tempfile::TempDir, tempfile::TempDir, Library) {
+    let data = tempfile::tempdir().unwrap();
+    let assets = tempfile::tempdir().unwrap();
+    write(assets.path(), "Thing.unitypackage", &unitypackage(paths));
+    let mut library = Library::open(data.path()).unwrap();
+    library.scan_root(assets.path(), CodePage::Other).unwrap();
+    run_all(&mut library);
+    (data, assets, library)
+}
+
+#[test]
+fn the_shop_is_the_folder_above_the_one_product_a_package_installs() {
+    let (_data, _assets, library) = read_one_package(&[
+        "Assets/PLUSONE/Mafuyu/Mafuyu.prefab",
+        "Assets/PLUSONE/Mafuyu/Textures/Body.png",
+        "Assets/PLUSONE/Mafuyu/Textures/Hair.png",
+        "Assets/lilToon/Shader/lts.shader",
+    ]);
+
+    assert_eq!(shop_of_only_item(&library), ["PLUSONE"]);
+    assert_eq!(library.facts(library.items()[0].id).unwrap().shop.as_deref(), Some("PLUSONE"));
+}
+
+#[test]
+fn a_product_folder_split_into_role_folders_names_no_shop() {
+    let (_data, _assets, library) = read_one_package(&[
+        "Assets/Shinano/Texture/Body.png",
+        "Assets/Shinano/FBX/Shinano.fbx",
+        "Assets/Shinano/Prefab/Shinano.prefab",
+        "Assets/Shinano/Material/Body.mat",
+    ]);
+
+    assert!(shop_of_only_item(&library).is_empty());
+}
+
+#[test]
+fn a_shop_the_user_removed_stays_removed_when_the_package_is_read_again() {
+    let (data, assets, mut library) = read_one_package(&["Assets/Shop/Hair/Hair.prefab"]);
+    let item = library.items()[0].id;
+    library.remove_facet(&item_node(item), FacetKey::Shop, "Shop").unwrap();
+    drop(library);
+    std::fs::remove_file(data.path().join("cache.db")).unwrap();
+
+    let mut library = Library::open(data.path()).unwrap();
+    library.scan_root(assets.path(), CodePage::Other).unwrap();
+    run_all(&mut library);
+
+    assert!(shop_of_only_item(&library).is_empty());
 }

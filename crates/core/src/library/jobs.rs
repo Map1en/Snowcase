@@ -8,9 +8,11 @@ use snowcase_formats::{
     FileKind, PackageAsset, QUICK_SPAN, crc32, is_junk, list_unitypackage, list_zipped_unitypackage,
     quick_fingerprint,
 };
-use snowcase_store::{BlobId, ItemId, LocationState, PackageKey, ScannedPackage, StoreError};
+use snowcase_store::{
+    BlobId, FacetKey, FacetOrigin, FacetValue, ItemId, LocationState, PackageKey, ScannedPackage, StoreError,
+};
 
-use super::{Library, PackageSummary};
+use super::{Library, PackageSummary, item_node};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Task {
@@ -223,7 +225,28 @@ impl Library {
         for scanned in &packages {
             snapshot.packages.insert(scanned.key.clone(), PackageSummary::of(scanned));
         }
-        let touched: Vec<ItemId> = touched.into_iter().collect();
+        let mut touched: Vec<ItemId> = touched.into_iter().collect();
+        touched.sort();
+        self.refresh_items(&touched)?;
+        if packages.is_empty() {
+            return Ok(());
+        }
+        let shops: Vec<(ItemId, Vec<FacetValue>)> = touched
+            .iter()
+            .map(|id| {
+                let shop = self.shop_from_packages(*id).map(|value| FacetValue {
+                    value,
+                    target_item_id: None,
+                });
+                (*id, shop.into_iter().collect())
+            })
+            .collect();
+        self.store.transaction(|store| {
+            for (id, shop) in &shops {
+                store.replace_facets(&item_node(*id), FacetKey::Shop, FacetOrigin::Auto, shop)?;
+            }
+            Ok(())
+        })?;
         self.refresh_items(&touched)
     }
 }

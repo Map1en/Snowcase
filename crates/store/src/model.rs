@@ -119,6 +119,7 @@ text_enum!(FacetKey {
     Color => "color",
     Version => "version",
     Role => "role",
+    Shop => "shop",
 });
 
 impl FacetKey {

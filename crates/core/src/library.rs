@@ -228,7 +228,28 @@ pub struct FolderRow<'a> {
 pub struct PackageSummary {
     pub files: usize,
     pub root: Option<String>,
+    pub shop: Option<String>,
     pub error: Option<String>,
+}
+
+const SHOP_SHARE: f64 = 0.6;
+
+fn shop_of(files: &[&str]) -> Option<String> {
+    let mut by_top: HashMap<&str, HashMap<&str, usize>> = HashMap::new();
+    for path in files {
+        let parts: Vec<&str> = path.split('/').collect();
+        if let ["Assets", top, product, _, ..] = parts.as_slice() {
+            *by_top.entry(top).or_default().entry(product).or_default() += 1;
+        }
+    }
+    let (top, products) = by_top
+        .into_iter()
+        .max_by(|a, b| a.1.values().sum::<usize>().cmp(&b.1.values().sum()).then_with(|| b.0.cmp(a.0)))?;
+    let under_top: usize = products.values().sum();
+    let largest = products.values().copied().max().unwrap_or(0);
+    let dominant = under_top as f64 >= files.len() as f64 * SHOP_SHARE;
+    let one_product = largest as f64 >= under_top as f64 * SHOP_SHARE;
+    (dominant && one_product).then(|| top.to_owned())
 }
 
 impl PackageSummary {
@@ -254,6 +275,7 @@ impl PackageSummary {
                         .into_iter()
                         .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(&a.0)))
                         .map(|(root, _)| root),
+                    shop: shop_of(&files),
                     error: None,
                 }
             }
@@ -463,6 +485,22 @@ impl Snapshot {
             let (archive, member) = (file.extracted_from_blob_id?, file.extracted_from_path.as_deref()?);
             self.packages.get(&self.package_key(archive, member)?)
         })
+    }
+
+    fn shop_from_packages(&self, id: ItemId) -> Option<String> {
+        let mut shops: HashMap<&str, usize> = HashMap::new();
+        for file in self.catalog.files.iter().filter(|file| file.item_id == id) {
+            let inside = self.packages_in(file.blob_id).into_iter().map(|(_, summary)| summary);
+            for summary in self.package_of(file).into_iter().chain(inside) {
+                if let Some(shop) = &summary.shop {
+                    *shops.entry(shop).or_default() += summary.files;
+                }
+            }
+        }
+        shops
+            .into_iter()
+            .max_by(|a, b| a.1.cmp(&b.1).then_with(|| b.0.cmp(a.0)))
+            .map(|(shop, _)| shop.to_owned())
     }
 
     pub fn packages_in(&self, blob: BlobId) -> Vec<(&str, &PackageSummary)> {
@@ -935,6 +973,9 @@ fn facts_of(catalog: &Catalog, wanted: impl Fn(ItemId) -> bool) -> HashMap<ItemI
             entry
                 .attributes
                 .extend(resolve(&keyed, &node).into_iter().map(|facet| (*key, facet.value)));
+        }
+        if entry.shop.is_none() {
+            entry.shop = entry.attribute(FacetKey::Shop).map(str::to_owned);
         }
     }
     facts

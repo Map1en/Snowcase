@@ -834,7 +834,7 @@ impl LibraryView {
                 )),
             );
         }
-        if let Some(shop) = facts.shop.clone() {
+        if let Some(shop) = facts.shop.clone().filter(|_| facts.attribute(FacetKey::Shop).is_none()) {
             chips = chips.child(chip(shop, theme));
         }
         let empty = facts.attributes.is_empty() && facts.shop.is_none();
