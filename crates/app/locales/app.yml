@@ -401,3 +401,21 @@ tree.more:
   zh-TW: 還有 %{count} 個
   ja: ほか %{count} 件
   ko: "%{count}개 더"
+root.remove:
+  en: Remove library folder
+  zh-CN: 移除库文件夹
+  zh-TW: 移除庫資料夾
+  ja: ライブラリフォルダーを外す
+  ko: 라이브러리 폴더 제거
+root.remove_confirm:
+  en: "Remove %{path} from the library?"
+  zh-CN: 把 %{path} 从资料库里移除吗？
+  zh-TW: 把 %{path} 從資料庫裡移除嗎？
+  ja: "%{path} をライブラリから外しますか？"
+  ko: "%{path}을(를) 라이브러리에서 제거할까요?"
+root.remove_detail:
+  en: "%{count} items that only live in this folder will be removed, with their tags and notes. Files on disk are not touched."
+  zh-CN: 只在这个文件夹里的 %{count} 个商品会被移除，它们的标签和备注也会一起删掉。磁盘上的文件不动。
+  zh-TW: 只在這個資料夾裡的 %{count} 個商品會被移除，它們的標籤和備註也會一起刪掉。磁碟上的檔案不動。
+  ja: このフォルダーにしかない %{count} 個の商品が、タグやメモと一緒にライブラリから消えます。ディスク上のファイルはそのままです。
+  ko: 이 폴더에만 있는 상품 %{count}개가 태그와 메모와 함께 제거됩니다. 디스크의 파일은 그대로입니다.

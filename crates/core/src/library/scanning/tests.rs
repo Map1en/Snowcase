@@ -281,3 +281,28 @@ fn scanning_every_root_picks_up_new_files_and_skips_a_root_that_is_not_there() {
         .collect();
     assert!(states.iter().all(|state| *state == LocationState::Present));
 }
+
+#[test]
+fn removing_a_root_drops_items_that_live_only_there_and_keeps_the_rest() {
+    let mut fx = fixture();
+    write(fx.root(), "Hair.unitypackage", PACKAGE);
+    write(fx.root(), "Gloves.unitypackage", b"gloves bytes");
+    fx.scan();
+    let other = tempfile::tempdir().unwrap();
+    write(other.path(), "Ribbon.unitypackage", TEXTURE);
+    fx.library.scan_root(other.path(), CodePage::SimplifiedChinese).unwrap();
+    let id = |library: &Library, title: &str| library.items().iter().find(|item| item.title == title).unwrap().id;
+    let (hair, ribbon) = (id(&fx.library, "Hair"), id(&fx.library, "Ribbon"));
+    fx.library.merge_items(ribbon, hair).unwrap();
+    let root = fx.library.roots()[0].0.id;
+    assert_eq!(fx.library.only_in_root(root), 1, "only Gloves lives entirely in the first root");
+
+    fx.library.remove_root(root).unwrap();
+
+    let titles: Vec<&str> = fx.library.items().iter().map(|item| item.title.as_str()).collect();
+    assert_eq!(titles, ["Ribbon"]);
+    assert_eq!(fx.library.files(ribbon).len(), 1, "the merged file from the removed root is gone");
+    assert_eq!(fx.library.roots().len(), 1);
+    assert!(fx.root().join("Hair.unitypackage").exists(), "files on disk are left alone");
+    assert_matches_a_full_reload(&fx.library, fx._data.path());
+}

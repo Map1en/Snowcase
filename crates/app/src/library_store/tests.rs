@@ -147,3 +147,28 @@ fn files_that_cannot_be_read_are_reported_and_the_rest_still_run(cx: &mut TestAp
     assert_eq!(pending(&store, cx), 1);
     drop(dir);
 }
+
+#[gpui_kit::test]
+fn work_found_while_a_run_is_going_is_picked_up_when_it_ends(cx: &mut TestAppContext) {
+    let (Fixture { library, dir: _dir }, assets) = fixtures::scanned(2);
+    let store = cx.new(|cx| LibraryStore::new(Ok(library), cx));
+    store.update(cx, |store, cx| {
+        store.start_background(cx);
+        store.pause_background(cx);
+    });
+    cx.run_until_parked();
+
+    std::fs::write(assets.path().join("Later.unitypackage"), fixtures::unitypackage(&["Assets/Shop/Later/Later.prefab"])).unwrap();
+    let root = assets.path().to_path_buf();
+    store.update(cx, |store, cx| {
+        store
+            .change(cx, move |library| library.scan_root(&root, snowcase_core::names::CodePage::Other))
+            .detach();
+        store.start_background(cx);
+        store.resume_background(cx);
+    });
+    cx.run_until_parked();
+
+    assert_eq!(pending(&store, cx), 0);
+    assert!(!progress(&store, cx).running);
+}

@@ -363,3 +363,20 @@ fn a_search_hit_inside_a_package_opens_the_tree_down_to_it(cx: &mut TestAppConte
 
     assert_eq!(count(window, "tree-file", cx), 2, "Bikini.prefab and the Tights inside the opened Parts folder");
 }
+
+#[gpui_kit::test]
+fn removing_a_library_folder_asks_first_and_then_drops_its_items(cx: &mut TestAppContext) {
+    let (Fixture { library, dir: _dir }, assets) = fixtures::scanned(2);
+    let (window, _) = open_library(library, cx);
+    assert_eq!(count(window, "asset", cx), 2);
+
+    click(window, ("remove-root", 1usize), cx);
+    cx.simulate_prompt_answer("Cancel");
+    assert_eq!(count(window, "asset", cx), 2);
+
+    click(window, ("remove-root", 1usize), cx);
+    cx.simulate_prompt_answer("Remove library folder");
+    assert!(exists(window, "empty-state", cx));
+    assert!(!exists(window, "scope-root-1", cx));
+    assert!(assets.path().join("Outfit00.unitypackage").exists());
+}

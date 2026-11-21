@@ -400,6 +400,14 @@ impl Library {
         self.refresh_items(&[id])
     }
 
+    pub fn remove_root(&mut self, root: RootId) -> Result<(), StoreError> {
+        let affected = self.items_in_root(root);
+        self.store.remove_root(root)?;
+        let roots = self.store.load_roots()?;
+        Arc::make_mut(&mut self.snapshot).catalog.roots = roots;
+        self.refresh_items(&affected)
+    }
+
     pub fn merge_items(&mut self, into: ItemId, from: ItemId) -> Result<(), StoreError> {
         if into == from {
             return Ok(());
@@ -758,6 +766,34 @@ impl Snapshot {
 
     pub fn shops(&self) -> Vec<(String, usize)> {
         tally(self.facts.values().filter_map(|facts| facts.shop.clone()))
+    }
+
+    fn items_in_root(&self, root: RootId) -> Vec<ItemId> {
+        self.facts
+            .iter()
+            .filter(|(_, facts)| facts.roots.contains(&root))
+            .map(|(id, _)| *id)
+            .collect()
+    }
+
+    pub fn only_in_root(&self, root: RootId) -> usize {
+        let catalog = &self.catalog;
+        let elsewhere: HashSet<BlobId> = catalog
+            .locations
+            .iter()
+            .filter(|location| location.root_id != Some(root))
+            .map(|location| location.blob_id)
+            .collect();
+        self.items_in_root(root)
+            .into_iter()
+            .filter(|id| {
+                catalog
+                    .files
+                    .iter()
+                    .filter(|file| file.item_id == *id)
+                    .all(|file| !elsewhere.contains(&file.blob_id))
+            })
+            .count()
     }
 
     pub fn roots(&self) -> Vec<(&Root, usize)> {

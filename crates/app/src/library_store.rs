@@ -25,6 +25,7 @@ pub struct Progress {
 struct Background {
     progress: Progress,
     cancelled: bool,
+    again: bool,
     wake: Option<oneshot::Sender<()>>,
     task: Option<Task<()>>,
 }
@@ -99,6 +100,7 @@ impl LibraryStore {
 
     pub fn start_background(&mut self, cx: &mut Context<Self>) {
         if self.background.progress.running {
+            self.background.again = true;
             return;
         }
         let listed = self.change(cx, |library| Ok(library.pending_work()));
@@ -254,7 +256,11 @@ fn finish(this: &WeakEntity<LibraryStore>, cx: &mut AsyncApp) {
         let progress = &mut this.background.progress;
         progress.running = false;
         progress.paused = false;
+        let again = this.background.again && !this.background.cancelled;
         cx.notify();
+        if again {
+            this.start_background(cx);
+        }
     })
     .ok();
 }

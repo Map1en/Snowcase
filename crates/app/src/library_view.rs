@@ -16,7 +16,7 @@ use snowcase_core::library::{
     item_node, shown_name,
 };
 use snowcase_core::names::CodePage;
-use snowcase_core::{BlobId, FacetKey, FileKind, ItemId, LocationState, StoreError};
+use snowcase_core::{BlobId, FacetKey, FileKind, ItemId, LocationState, RootId, StoreError};
 
 use crate::i18n::{self, Locale, tr};
 use crate::library_store::LibraryStore;
@@ -533,16 +533,52 @@ impl LibraryView {
         let actions = if library.roots().is_empty() { vec![add] } else { vec![rescan, add] };
         let mut roots = filter_group(tr!(cx, "root.title"), actions);
         for (root, count) in library.roots() {
-            roots = roots.child(self.nav_item(
-                format!("scope-root-{}", root.id.0).into(),
-                folder_name(&root.path).into(),
-                0,
-                count,
-                Scope::Root(root.id),
-                cx,
-            ));
+            let root_id = root.id;
+            let doomed = library.only_in_root(root_id);
+            let path = root.path.clone();
+            roots = roots.child(
+                h_flex()
+                    .gap_1()
+                    .child(div().flex_1().min_w_0().child(self.nav_item(
+                        format!("scope-root-{}", root.id.0).into(),
+                        folder_name(&root.path).into(),
+                        0,
+                        count,
+                        Scope::Root(root.id),
+                        cx,
+                    )))
+                    .child(
+                        Button::new(("remove-root", root.id.0 as usize))
+                            .ghost()
+                            .xsmall()
+                            .icon(IconName::Close)
+                            .tooltip(tr!(cx, "root.remove"))
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                this.confirm_remove_root(root_id, &path, doomed, window, cx);
+                            })),
+                    ),
+            );
         }
         column.child(roots)
+    }
+
+    fn confirm_remove_root(&mut self, root: RootId, path: &str, doomed: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let message = tr!(cx, "root.remove_confirm", path = path);
+        let detail = tr!(cx, "root.remove_detail", count = doomed);
+        let (remove, cancel) = (tr!(cx, "root.remove"), tr!(cx, "action.cancel"));
+        let answer = window.prompt(PromptLevel::Warning, &message, Some(&detail), &[remove.as_ref(), cancel.as_ref()], cx);
+        cx.spawn(async move |this, cx| {
+            if answer.await == Ok(0) {
+                this.update(cx, |this, cx| {
+                    if this.filter.scope == Scope::Root(root) {
+                        this.filter.scope = Scope::All;
+                    }
+                    this.change(cx, move |library| library.remove_root(root));
+                })
+                .ok();
+            }
+        })
+        .detach();
     }
 
     fn nav_item(

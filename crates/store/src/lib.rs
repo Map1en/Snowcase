@@ -565,6 +565,28 @@ impl Store {
         Ok(())
     }
 
+    pub fn remove_root(&mut self, root: RootId) -> Result<()> {
+        const ONLY_HERE: &str = "SELECT blob_id FROM blob_location WHERE root_id = ?1
+             EXCEPT SELECT blob_id FROM blob_location WHERE root_id IS NOT ?1";
+        let steps = [
+            format!(
+                "DELETE FROM item WHERE id IN (SELECT item_id FROM item_file WHERE blob_id IN ({ONLY_HERE}))
+                 AND id NOT IN (SELECT item_id FROM item_file WHERE blob_id NOT IN ({ONLY_HERE}))"
+            ),
+            format!("DELETE FROM item_file WHERE blob_id IN ({ONLY_HERE})"),
+            format!("DELETE FROM blob WHERE id IN ({ONLY_HERE}) AND id NOT IN (SELECT blob_id FROM item_file)"),
+            "DELETE FROM blob_location WHERE root_id = ?1".to_owned(),
+            "DELETE FROM root WHERE id = ?1".to_owned(),
+        ];
+        self.conn.transaction(|conn| {
+            for step in &steps {
+                diesel::sql_query(step).bind::<BigInt, _>(root.0).execute(conn)?;
+            }
+            Ok::<_, diesel::result::Error>(())
+        })?;
+        Ok(())
+    }
+
     pub fn merge_items(&mut self, into: ItemId, from: ItemId) -> Result<()> {
         const STEPS: [&str; 7] = [
             "INSERT OR IGNORE INTO item_file
