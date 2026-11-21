@@ -16,3 +16,4 @@ unicode-normalization = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 zip = { workspace = true }
+crc32fast = { workspace = true }

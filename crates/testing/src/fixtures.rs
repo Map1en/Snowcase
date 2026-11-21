@@ -6,6 +6,7 @@ use rand::rngs::StdRng;
 use snowcase_core::FileKind;
 use snowcase_core::library::{FileInfo, Library};
 use snowcase_core::FolderId;
+use snowcase_core::names::CodePage;
 
 const NOUNS: [&str; 8] = [
     "Avatar", "Outfit", "Earrings", "Hair", "Shader", "Tool", "Textures", "Set",
@@ -32,6 +33,20 @@ pub fn asset_dir() -> tempfile::TempDir {
     std::fs::write(dir.path().join(ASSET_FILES[0]), [0x1f, 0x8b, 0x08]).expect("write package");
     std::fs::write(dir.path().join(ASSET_FILES[1]), [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).expect("write image");
     dir
+}
+
+pub fn scanned(count: usize) -> (Fixture, tempfile::TempDir) {
+    let assets = tempfile::tempdir().expect("create asset directory");
+    for n in 0..count {
+        std::fs::write(assets.path().join(format!("Outfit{n:02}.unitypackage")), [0x1f, 0x8b, n as u8])
+            .expect("write package");
+    }
+    let mut fixture = empty();
+    fixture
+        .library
+        .scan_root(assets.path(), CodePage::Other)
+        .expect("scan fixture assets");
+    (fixture, assets)
 }
 
 pub fn library(seed: u64, count: usize) -> Fixture {

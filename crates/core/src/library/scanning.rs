@@ -40,7 +40,7 @@ impl Library {
             .ok_or_else(|| StoreError::NonUtf8Path(root.to_path_buf()))?
             .to_owned();
         let walk = scan::walk(root);
-        let listings = scan::probe(root, &walk.files);
+        let listings = scan::probe(root, &walk.files, &mut self.archives);
         let plan = group::plan(&walk.files, &listings, code_page);
 
         let catalog = &self.snapshot.catalog;

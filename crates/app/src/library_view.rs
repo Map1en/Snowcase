@@ -227,6 +227,7 @@ impl LibraryView {
                 this.pending_imports -= 1;
                 let files = files.into_iter().flatten().collect();
                 this.change(cx, move |library| library.import(files));
+                this.store.update(cx, |store, cx| store.start_background(cx));
             })
             .ok();
         })
@@ -275,11 +276,15 @@ impl LibraryView {
             .p_3()
             .bg(theme.sidebar);
 
-        let mut group = filter_group(tr!(cx, "nav.library"), None);
-        for (id, label, scope) in [("scope-all", tr!(cx, "scope.all"), Scope::All)] {
-            let count = library.count(&scope);
-            group = group.child(self.filter_item(id.into(), label, 0, count, scope, cx));
-        }
+        let count = library.count(&Scope::All);
+        let group = filter_group(tr!(cx, "nav.library"), None).child(self.filter_item(
+            "scope-all".into(),
+            tr!(cx, "scope.all"),
+            0,
+            count,
+            Scope::All,
+            cx,
+        ));
         column = column.child(group);
 
         let add = Button::new("add-folder")

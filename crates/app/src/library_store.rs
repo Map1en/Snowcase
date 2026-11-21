@@ -4,9 +4,36 @@ use futures::StreamExt;
 use futures::channel::{mpsc, oneshot};
 use gpui_kit::*;
 use snowcase_core::StoreError;
-use snowcase_core::library::{Library, Snapshot};
+use snowcase_core::library::{Library, Outcome, Snapshot, run};
 
 type Job = Box<dyn FnOnce(&mut Library) + Send>;
+
+const BATCH: usize = 32;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Progress {
+    pub done: usize,
+    pub total: usize,
+    pub bytes_done: u64,
+    pub bytes_total: u64,
+    pub failures: Vec<(String, String)>,
+    pub paused: bool,
+    pub running: bool,
+}
+
+#[derive(Default)]
+struct Background {
+    progress: Progress,
+    cancelled: bool,
+    wake: Option<oneshot::Sender<()>>,
+    task: Option<Task<()>>,
+}
+
+enum Step {
+    Go,
+    Wait(oneshot::Receiver<()>),
+    Stop,
+}
 
 pub struct LibraryStore {
     snapshot: Option<Arc<Snapshot>>,
@@ -15,6 +42,7 @@ pub struct LibraryStore {
     pending: usize,
     sent: u64,
     shown: u64,
+    background: Background,
     _writer: Option<Task<()>>,
 }
 
@@ -36,6 +64,7 @@ impl LibraryStore {
                     pending: 0,
                     sent: 0,
                     shown: 0,
+                    background: Background::default(),
                     _writer: Some(writer),
                 }
             }
@@ -46,6 +75,7 @@ impl LibraryStore {
                 pending: 0,
                 sent: 0,
                 shown: 0,
+                background: Background::default(),
                 _writer: None,
             },
         }
@@ -61,6 +91,105 @@ impl LibraryStore {
 
     pub fn is_busy(&self) -> bool {
         self.pending > 0
+    }
+
+    pub fn progress(&self) -> &Progress {
+        &self.background.progress
+    }
+
+    pub fn start_background(&mut self, cx: &mut Context<Self>) {
+        if self.background.progress.running {
+            return;
+        }
+        let listed = self.change(cx, |library| Ok(library.pending_work()));
+        self.background = Background {
+            progress: Progress {
+                running: true,
+                ..Progress::default()
+            },
+            ..Background::default()
+        };
+        cx.notify();
+        let task = cx.spawn(async move |this, cx| {
+            let work = listed.await.unwrap_or_default();
+            this.update(cx, |this, cx| {
+                let progress = &mut this.background.progress;
+                progress.total = work.len();
+                progress.bytes_total = work.iter().map(|item| item.bytes()).sum();
+                cx.notify();
+            })
+            .ok();
+            let mut batch: Vec<Outcome> = Vec::new();
+            for item in work {
+                loop {
+                    let step = this
+                        .update(cx, |this, _| {
+                            let background = &mut this.background;
+                            if background.cancelled {
+                                Step::Stop
+                            } else if background.progress.paused {
+                                let (wake, waiting) = oneshot::channel();
+                                background.wake = Some(wake);
+                                Step::Wait(waiting)
+                            } else {
+                                Step::Go
+                            }
+                        })
+                        .unwrap_or(Step::Stop);
+                    match step {
+                        Step::Go => break,
+                        Step::Wait(waiting) => {
+                            flush(&this, cx, &mut batch).await;
+                            waiting.await.ok();
+                        }
+                        Step::Stop => {
+                            flush(&this, cx, &mut batch).await;
+                            finish(&this, cx);
+                            return;
+                        }
+                    }
+                }
+                let bytes = item.bytes();
+                let outcome = cx.background_spawn(async move { run(item) }).await;
+                this.update(cx, |this, cx| {
+                    let progress = &mut this.background.progress;
+                    progress.done += 1;
+                    progress.bytes_done += bytes;
+                    if let Err(error) = &outcome.result {
+                        progress.failures.push((outcome.work.path.to_string_lossy().into_owned(), error.clone()));
+                    }
+                    cx.notify();
+                })
+                .ok();
+                batch.push(outcome);
+                if batch.len() >= BATCH {
+                    flush(&this, cx, &mut batch).await;
+                }
+            }
+            flush(&this, cx, &mut batch).await;
+            finish(&this, cx);
+        });
+        self.background.task = Some(task);
+    }
+
+    pub fn pause_background(&mut self, cx: &mut Context<Self>) {
+        if self.background.progress.running {
+            self.background.progress.paused = true;
+            cx.notify();
+        }
+    }
+
+    pub fn resume_background(&mut self, cx: &mut Context<Self>) {
+        self.background.progress.paused = false;
+        if let Some(wake) = self.background.wake.take() {
+            wake.send(()).ok();
+        }
+        cx.notify();
+    }
+
+    pub fn cancel_background(&mut self, cx: &mut Context<Self>) {
+        self.background.cancelled = true;
+        self.resume_background(cx);
     }
 
     pub fn change<T, F>(&mut self, cx: &mut Context<Self>, change: F) -> Task<Option<T>>
@@ -107,6 +236,27 @@ impl LibraryStore {
             .flatten()
         })
     }
+}
+
+async fn flush(this: &WeakEntity<LibraryStore>, cx: &mut AsyncApp, batch: &mut Vec<Outcome>) {
+    if batch.is_empty() {
+        return;
+    }
+    let outcomes = std::mem::take(batch);
+    let write = this.update(cx, |this, cx| this.change(cx, move |library| library.apply_work(&outcomes)));
+    if let Ok(write) = write {
+        write.await;
+    }
+}
+
+fn finish(this: &WeakEntity<LibraryStore>, cx: &mut AsyncApp) {
+    this.update(cx, |this, cx| {
+        let progress = &mut this.background.progress;
+        progress.running = false;
+        progress.paused = false;
+        cx.notify();
+    })
+    .ok();
 }
 
 #[cfg(test)]

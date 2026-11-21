@@ -449,6 +449,20 @@ impl Store {
         Ok(())
     }
 
+    pub fn set_fingerprint(&mut self, id: BlobId, fingerprint: &str) -> Result<()> {
+        diesel::update(blob::table.find(id))
+            .set(blob::fingerprint.eq(fingerprint))
+            .execute(&mut self.conn)?;
+        Ok(())
+    }
+
+    pub fn set_crc32(&mut self, id: BlobId, crc32: u32) -> Result<()> {
+        diesel::update(blob::table.find(id))
+            .set(blob::crc32.eq(i64::from(crc32)))
+            .execute(&mut self.conn)?;
+        Ok(())
+    }
+
     pub fn mark_missing(&mut self, id: LocationId) -> Result<()> {
         diesel::update(blob_location::table.find(id))
             .set(blob_location::state.eq(LocationState::Missing))

@@ -7,6 +7,8 @@ use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use snowcase_formats::{FileKind, HEADER_LEN, detect_kind};
+
+use crate::scan::ArchiveCache;
 use snowcase_store::{
     Blob, BlobId, BlobKind, BlobLocation, Catalog, Facet, FacetKey, FacetNode, FacetOrigin, FacetValue,
     FileImport, Folder, FolderId, Item, ItemChanges, ItemFile, ItemId, Store, StoreError, Tag,
@@ -172,6 +174,7 @@ pub struct Snapshot {
 pub struct Library {
     store: Store,
     snapshot: Arc<Snapshot>,
+    archives: ArchiveCache,
 }
 
 impl Library {
@@ -185,6 +188,7 @@ impl Library {
         Ok(Self {
             store,
             snapshot: Arc::new(Snapshot::new(catalog)),
+            archives: ArchiveCache::default(),
         })
     }
 
@@ -649,8 +653,10 @@ fn title_of(file_name: &str) -> String {
         .unwrap_or_else(|| file_name.to_owned())
 }
 
+mod jobs;
 mod scanning;
 
+pub use jobs::{Done, Outcome, Task, Work, run};
 pub use scanning::ScanReport;
 
 #[cfg(test)]

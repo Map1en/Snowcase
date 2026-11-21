@@ -126,11 +126,28 @@ fn join(dir: &str, name: &str) -> String {
     }
 }
 
-pub fn probe(root: &Path, files: &[FoundFile]) -> HashMap<String, Vec<ArchiveEntry>> {
+#[derive(Debug, Clone, Default)]
+pub struct ArchiveCache(HashMap<String, (u64, i64, Vec<ArchiveEntry>)>);
+
+impl ArchiveCache {
+    pub fn get(&self, path: &str) -> Option<&[ArchiveEntry]> {
+        self.0.get(path).map(|(_, _, entries)| entries.as_slice())
+    }
+}
+
+pub fn probe(root: &Path, files: &[FoundFile], cache: &mut ArchiveCache) -> HashMap<String, Vec<ArchiveEntry>> {
     let mut listings = HashMap::new();
     for file in files.iter().filter(|file| file.kind == FileKind::Archive) {
+        let path = root.join(&file.rel_path).to_string_lossy().into_owned();
+        if let Some((size, modified_ms, entries)) = cache.0.get(&path)
+            && *size == file.size
+            && *modified_ms == file.modified_ms
+        {
+            listings.insert(file.rel_path.clone(), entries.clone());
+            continue;
+        }
         let lower = file.rel_path.to_ascii_lowercase();
-        let Ok(handle) = File::open(root.join(&file.rel_path)) else {
+        let Ok(handle) = File::open(&path) else {
             continue;
         };
         let reader = BufReader::new(handle);
@@ -142,6 +159,7 @@ pub fn probe(root: &Path, files: &[FoundFile]) -> HashMap<String, Vec<ArchiveEnt
             None
         };
         if let Some(entries) = listed {
+            cache.0.insert(path, (file.size, file.modified_ms, entries.clone()));
             listings.insert(file.rel_path.clone(), entries);
         }
     }

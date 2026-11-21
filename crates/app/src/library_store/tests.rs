@@ -61,3 +61,88 @@ fn a_failed_write_keeps_the_error_and_the_next_write_clears_it(cx: &mut TestAppC
     cx.run_until_parked();
     store.read_with(cx, |store, _| assert!(store.error().is_none()));
 }
+
+fn scanned(count: usize, cx: &mut TestAppContext) -> (Entity<LibraryStore>, impl Sized + use<>) {
+    let (Fixture { library, dir }, assets) = fixtures::scanned(count);
+    (cx.new(|cx| LibraryStore::new(Ok(library), cx)), (dir, assets))
+}
+
+fn pending(store: &Entity<LibraryStore>, cx: &mut TestAppContext) -> usize {
+    let left = store.update(cx, |store, cx| store.change(cx, |library| Ok(library.pending_work().len())));
+    cx.run_until_parked();
+    cx.foreground_executor().block_on(left).unwrap()
+}
+
+fn progress(store: &Entity<LibraryStore>, cx: &mut TestAppContext) -> super::Progress {
+    store.read_with(cx, |store, _| store.progress().clone())
+}
+
+#[gpui_kit::test]
+fn background_work_runs_every_file_and_reports_progress(cx: &mut TestAppContext) {
+    let (store, _dirs) = scanned(3, cx);
+    assert_eq!(pending(&store, cx), 3);
+
+    store.update(cx, |store, cx| store.start_background(cx));
+    assert!(progress(&store, cx).running);
+    cx.run_until_parked();
+
+    let done = progress(&store, cx);
+    assert_eq!((done.done, done.total, done.running), (3, 3, false));
+    assert_eq!(done.bytes_done, done.bytes_total);
+    assert!(done.failures.is_empty());
+    assert_eq!(pending(&store, cx), 0);
+}
+
+#[gpui_kit::test]
+fn paused_work_waits_until_resumed(cx: &mut TestAppContext) {
+    let (store, _dirs) = scanned(3, cx);
+
+    store.update(cx, |store, cx| {
+        store.start_background(cx);
+        store.pause_background(cx);
+    });
+    cx.run_until_parked();
+    let paused = progress(&store, cx);
+    assert_eq!((paused.done, paused.total, paused.paused, paused.running), (0, 3, true, true));
+
+    store.update(cx, |store, cx| store.resume_background(cx));
+    cx.run_until_parked();
+    assert_eq!(progress(&store, cx).done, 3);
+    assert_eq!(pending(&store, cx), 0);
+}
+
+#[gpui_kit::test]
+fn cancelled_work_stops_and_starting_again_finishes_what_is_left(cx: &mut TestAppContext) {
+    let (store, _dirs) = scanned(3, cx);
+
+    store.update(cx, |store, cx| {
+        store.start_background(cx);
+        store.pause_background(cx);
+    });
+    cx.run_until_parked();
+    store.update(cx, |store, cx| store.cancel_background(cx));
+    cx.run_until_parked();
+    assert!(!progress(&store, cx).running);
+    assert_eq!(pending(&store, cx), 3);
+
+    store.update(cx, |store, cx| store.start_background(cx));
+    cx.run_until_parked();
+    assert_eq!(pending(&store, cx), 0);
+}
+
+#[gpui_kit::test]
+fn files_that_cannot_be_read_are_reported_and_the_rest_still_run(cx: &mut TestAppContext) {
+    let (Fixture { library, dir }, assets) = fixtures::scanned(3);
+    std::fs::remove_file(assets.path().join("Outfit01.unitypackage")).unwrap();
+    let store = cx.new(|cx| LibraryStore::new(Ok(library), cx));
+
+    store.update(cx, |store, cx| store.start_background(cx));
+    cx.run_until_parked();
+
+    let done = progress(&store, cx);
+    assert_eq!(done.done, 3);
+    assert_eq!(done.failures.len(), 1);
+    assert!(done.failures[0].0.ends_with("Outfit01.unitypackage"));
+    assert_eq!(pending(&store, cx), 1);
+    drop(dir);
+}
