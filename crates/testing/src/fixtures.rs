@@ -4,7 +4,7 @@ use fake::faker::name::ja_jp::FirstName;
 use rand::SeedableRng;
 use rand::rngs::StdRng;
 use snowcase_core::FileKind;
-use snowcase_core::library::{FileInfo, Library};
+use snowcase_core::library::{FileInfo, Library, item_node};
 use snowcase_core::FolderId;
 use snowcase_core::names::CodePage;
 
@@ -74,7 +74,7 @@ pub fn library(seed: u64, count: usize) -> Fixture {
         }
         for _ in 0..pick(&mut rng, 3) {
             library
-                .tag_item(id, TAGS[pick(&mut rng, TAGS.len())])
+                .tag(&item_node(id), TAGS[pick(&mut rng, TAGS.len())])
                 .expect("tag fixture item");
         }
     }

@@ -11,7 +11,7 @@ use gpui_kit::component::table::{DataTable, TableEvent, TableState};
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
-use snowcase_core::library::{Library, Scope, SortKey, Snapshot, collect_files, inspect_file};
+use snowcase_core::library::{Library, Scope, SortKey, Snapshot, collect_files, inspect_file, item_node};
 use snowcase_core::{FileKind, ItemId, LocationState, StoreError};
 
 use self::item_table::{ItemRow, ItemTable};
@@ -87,7 +87,7 @@ impl LibraryView {
                     return;
                 };
                 let name = input.read(cx).value();
-                this.change(cx, move |library| library.tag_item(id, &name));
+                this.change(cx, move |library| library.tag(&item_node(id), &name));
                 input.update(cx, |input, cx| input.set_value("", window, cx));
             }),
             cx.subscribe_in(&folder_input, window, |this, input, event, window, cx| {
@@ -639,7 +639,7 @@ impl LibraryView {
                 let tag_id = tag.id;
                 removable(format!("remove-tag-{}", tag_id.0), format!("# {}", tag.name), cx)
                     .on_click(cx.listener(move |this, _, _, cx| {
-                        this.change(cx, move |library| library.untag_item(id, tag_id));
+                        this.change(cx, move |library| library.untag(&item_node(id), tag_id));
                     }))
             },
         ));

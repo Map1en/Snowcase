@@ -149,6 +149,15 @@ fn titles_drop_extensions_versions_and_duplicate_suffixes_but_keep_avatar_names(
 }
 
 #[test]
+fn tag_keys_fold_width_case_and_surrounding_space() {
+    assert_eq!(tag_key(" ＢＬＡＣＫ "), "black");
+    assert_eq!(tag_key("Black"), tag_key("black"));
+    assert_eq!(tag_key("黑丝 "), tag_key("黑丝"));
+    assert_ne!(tag_key("黑丝"), tag_key("黑丝袜"));
+    assert_eq!(tag_key("ﾊｰﾄ"), tag_key("ハート"));
+}
+
+#[test]
 fn words_split_camel_case_digits_and_wide_text() {
     assert_eq!(words("NekoRibbonPoncho"), ["Neko", "Ribbon", "Poncho"]);
     assert_eq!(words("forKipfel"), ["for", "Kipfel"]);

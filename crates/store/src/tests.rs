@@ -6,7 +6,7 @@ fn open() -> (tempfile::TempDir, Store) {
     (dir, store)
 }
 
-fn import(item_id: ItemId, root_id: Option<RootId>, rel_path: &str, fingerprint: &str) -> FileImport {
+fn import(item_id: ItemId, root_id: Option<RootId>, rel_path: &str, modified_ms: i64) -> FileImport {
     FileImport {
         item_id,
         root_id,
@@ -14,8 +14,7 @@ fn import(item_id: ItemId, root_id: Option<RootId>, rel_path: &str, fingerprint:
         file_name: rel_path.rsplit('/').next().unwrap().to_owned(),
         display_name: None,
         size: 10,
-        modified_ms: 1,
-        fingerprint: fingerprint.to_owned(),
+        modified_ms,
         crc32: Some(0x1234),
         kind: BlobKind::UnityPackage,
     }
@@ -141,9 +140,9 @@ fn add_file_reuses_the_blob_for_a_known_location_and_shares_it_across_items() {
     let set = store.create_item("Gloves Set").unwrap();
     let root = store.add_root("D:/BOOTH").unwrap();
 
-    let first = store.add_file(&import(gloves, Some(root), "Gloves.unitypackage", "a")).unwrap();
-    let again = store.add_file(&import(gloves, Some(root), "Gloves.unitypackage", "a")).unwrap();
-    let shared = store.add_file(&import(set, Some(root), "Gloves.unitypackage", "a")).unwrap();
+    let first = store.add_file(&import(gloves, Some(root), "Gloves.unitypackage", 1)).unwrap();
+    let again = store.add_file(&import(gloves, Some(root), "Gloves.unitypackage", 1)).unwrap();
+    let shared = store.add_file(&import(set, Some(root), "Gloves.unitypackage", 1)).unwrap();
 
     assert_eq!(first, again);
     assert_eq!(first, shared);
@@ -161,10 +160,10 @@ fn the_same_relative_path_under_different_roots_or_none_is_a_different_location(
     let booth = store.add_root("D:/BOOTH").unwrap();
     let backup = store.add_root("E:/Backup").unwrap();
 
-    store.add_file(&import(item, Some(booth), "Gloves.unitypackage", "a")).unwrap();
-    store.add_file(&import(item, Some(backup), "Gloves.unitypackage", "b")).unwrap();
-    store.add_file(&import(item, None, "Gloves.unitypackage", "c")).unwrap();
-    store.add_file(&import(item, None, "Gloves.unitypackage", "c")).unwrap();
+    store.add_file(&import(item, Some(booth), "Gloves.unitypackage", 1)).unwrap();
+    store.add_file(&import(item, Some(backup), "Gloves.unitypackage", 2)).unwrap();
+    store.add_file(&import(item, None, "Gloves.unitypackage", 3)).unwrap();
+    store.add_file(&import(item, None, "Gloves.unitypackage", 3)).unwrap();
 
     let roots: Vec<_> = store
         .load()
@@ -181,8 +180,8 @@ fn add_file_creates_a_new_blob_when_the_file_at_a_location_changed() {
     let (_dir, mut store) = open();
     let item = store.create_item("Gloves").unwrap();
 
-    let old = store.add_file(&import(item, None, "D:/Gloves.unitypackage", "a")).unwrap();
-    let new = store.add_file(&import(item, None, "D:/Gloves.unitypackage", "b")).unwrap();
+    let old = store.add_file(&import(item, None, "D:/Gloves.unitypackage", 1)).unwrap();
+    let new = store.add_file(&import(item, None, "D:/Gloves.unitypackage", 2)).unwrap();
 
     assert_ne!(old, new);
     let catalog = store.load().unwrap();
@@ -195,7 +194,7 @@ fn add_file_creates_a_new_blob_when_the_file_at_a_location_changed() {
 fn a_blob_referenced_by_an_item_file_cannot_be_deleted() {
     let (_dir, mut store) = open();
     let item = store.create_item("Gloves").unwrap();
-    let blob_id = store.add_file(&import(item, None, "D:/Gloves.unitypackage", "a")).unwrap();
+    let blob_id = store.add_file(&import(item, None, "D:/Gloves.unitypackage", 1)).unwrap();
 
     let result = diesel::delete(blob::table.find(blob_id)).execute(&mut store.conn);
 
@@ -207,7 +206,7 @@ fn a_file_facet_must_belong_to_one_of_the_items_files() {
     let (_dir, mut store) = open();
     let gloves = store.create_item("Gloves").unwrap();
     let hair = store.create_item("Hair").unwrap();
-    let blob_id = store.add_file(&import(gloves, None, "D:/Gloves.unitypackage", "a")).unwrap();
+    let blob_id = store.add_file(&import(gloves, None, "D:/Gloves.unitypackage", 1)).unwrap();
     let foreign = FacetNode {
         item_id: hair,
         blob_id: Some(blob_id),
@@ -223,7 +222,7 @@ fn a_file_facet_must_belong_to_one_of_the_items_files() {
 fn removing_a_file_from_an_item_drops_its_facets_and_deleting_an_item_drops_all() {
     let (_dir, mut store) = open();
     let gloves = store.create_item("Gloves").unwrap();
-    let blob_id = store.add_file(&import(gloves, None, "D:/Gloves.unitypackage", "a")).unwrap();
+    let blob_id = store.add_file(&import(gloves, None, "D:/Gloves.unitypackage", 1)).unwrap();
     let file = FacetNode {
         item_id: gloves,
         blob_id: Some(blob_id),
@@ -311,21 +310,46 @@ fn a_user_value_replaces_an_earlier_removal_or_auto_row_of_the_same_value() {
 }
 
 #[test]
-fn tags_are_unique_case_insensitively_and_shared_between_items() {
+fn tags_are_shared_by_key_and_keep_the_first_spelling() {
     let (_dir, mut store) = open();
     let a = store.create_item("A").unwrap();
     let b = store.create_item("B").unwrap();
 
-    let first = store.tag_item(a, "Kikyo").unwrap();
-    let second = store.tag_item(b, "kikyo").unwrap();
+    let first = store.tag_node(&item_node(a), "Kikyo", "kikyo").unwrap();
+    let second = store.tag_node(&item_node(b), "KIKYO", "kikyo").unwrap();
     assert_eq!(first, second);
-    store.tag_item(a, "kikyo").unwrap();
-    store.untag_item(b, second).unwrap();
+    store.tag_node(&item_node(a), "kikyo", "kikyo").unwrap();
+    store.untag_node(&item_node(b), second).unwrap();
 
     let catalog = store.load().unwrap();
     assert_eq!(catalog.tags.len(), 1);
     assert_eq!(catalog.tags[0].name, "Kikyo");
-    assert_eq!(catalog.item_tags, [ItemTag { item_id: a, tag_id: first }]);
+    let links: Vec<_> = catalog.node_tags.iter().map(|link| (link.item_id, link.tag_id)).collect();
+    assert_eq!(links, [(a, first)]);
+}
+
+#[test]
+fn tags_can_sit_on_files_and_inner_paths_and_follow_the_file() {
+    let (_dir, mut store) = open();
+    let item = store.create_item("Rings").unwrap();
+    let blob_id = store.add_file(&import(item, None, "D:/Rings.zip", 1)).unwrap();
+    let file = FacetNode {
+        item_id: item,
+        blob_id: Some(blob_id),
+        inner_path: None,
+    };
+    let ring = FacetNode {
+        inner_path: Some("Ring_07.unitypackage".into()),
+        ..file.clone()
+    };
+    store.tag_node(&file, "olive", "olive").unwrap();
+    store.tag_node(&ring, "olive", "olive").unwrap();
+    store.tag_node(&ring, "olive", "olive").unwrap();
+    assert_eq!(store.load().unwrap().node_tags.len(), 2);
+
+    diesel::delete(item_file::table.find((item, blob_id))).execute(&mut store.conn).unwrap();
+
+    assert!(store.load().unwrap().node_tags.is_empty());
 }
 
 #[test]
@@ -399,9 +423,9 @@ fn text_enums_round_trip_through_their_text() {
 fn write_everything(store: &mut Store) -> Result<ItemId> {
     let item = store.create_item("Gloves")?;
     let root = store.add_root("D:/BOOTH")?;
-    store.add_file(&import(item, Some(root), "Gloves.unitypackage", "a"))?;
+    store.add_file(&import(item, Some(root), "Gloves.unitypackage", 1))?;
     store.replace_facets(&item_node(item), FacetKey::Target, FacetOrigin::Auto, &values(&["Manuka"]))?;
-    store.tag_item(item, "gloves")?;
+    store.tag_node(&item_node(item), "gloves", "gloves")?;
     let folder = store.create_folder(None, "Accessories")?;
     store.put_in_folder(item, folder)?;
     Ok(item)
@@ -433,7 +457,7 @@ fn a_successful_transaction_commits_nested_writes_and_the_store_stays_usable() {
     assert_eq!(catalog.files.len(), 1);
     assert_eq!(catalog.facets.len(), 1);
     assert_eq!(catalog.roots.len(), 1);
-    assert_eq!(catalog.item_tags.len(), 1);
+    assert_eq!(catalog.node_tags.len(), 1);
     assert_eq!(catalog.item_folders.len(), 1);
 }
 
@@ -442,7 +466,7 @@ fn moving_and_marking_a_location_keeps_its_blob() {
     let (_dir, mut store) = open();
     let item = store.create_item("Gloves").unwrap();
     let root = store.add_root("D:/BOOTH").unwrap();
-    let blob_id = store.add_file(&import(item, Some(root), "Gloves.zip", "a")).unwrap();
+    let blob_id = store.add_file(&import(item, Some(root), "Gloves.zip", 1)).unwrap();
     let location = store.load().unwrap().locations[0].id;
 
     store.mark_missing(location).unwrap();
@@ -458,10 +482,10 @@ fn removing_an_extracted_copy_drops_its_blob_but_keeps_a_shared_or_referenced_on
     let (_dir, mut store) = open();
     let item = store.create_item("Gloves").unwrap();
     let other = store.create_item("Set").unwrap();
-    let zip = store.add_file(&import(item, None, "D:/Gloves.zip", "z")).unwrap();
-    let copy = store.add_file(&import(item, None, "D:/Gloves/Gloves.unitypackage", "c")).unwrap();
-    let shared = store.add_file(&import(item, None, "D:/Gloves/readme.txt", "r")).unwrap();
-    store.add_file(&import(other, None, "D:/Gloves/readme.txt", "r")).unwrap();
+    let zip = store.add_file(&import(item, None, "D:/Gloves.zip", 4)).unwrap();
+    let copy = store.add_file(&import(item, None, "D:/Gloves/Gloves.unitypackage", 3)).unwrap();
+    let shared = store.add_file(&import(item, None, "D:/Gloves/readme.txt", 5)).unwrap();
+    store.add_file(&import(other, None, "D:/Gloves/readme.txt", 5)).unwrap();
     store.set_extracted_from(item, copy, Some((zip, "Gloves.unitypackage"))).unwrap();
     let catalog = store.load().unwrap();
     let file = catalog.files.iter().find(|file| file.blob_id == copy).unwrap();

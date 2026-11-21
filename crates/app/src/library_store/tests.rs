@@ -1,5 +1,6 @@
 use gpui_kit::{AppContext, Entity, TestAppContext};
 use snowcase_core::StoreError;
+use snowcase_core::library::item_node;
 use snowcase_testing::fixtures::{self, Fixture};
 
 use super::LibraryStore;
@@ -25,11 +26,11 @@ fn writes_run_in_the_background_and_apply_in_order(cx: &mut TestAppContext) {
     let id = first_item(&store, cx);
 
     store.update(cx, |store, cx| {
-        store.change(cx, move |library| library.tag_item(id, "first")).detach();
-        store.change(cx, move |library| library.tag_item(id, "second")).detach();
+        store.change(cx, move |library| library.tag(&item_node(id), "first")).detach();
+        store.change(cx, move |library| library.tag(&item_node(id), "second")).detach();
         store.change(cx, move |library| {
             let tag = library.tags_of(id).iter().find(|tag| tag.name == "first").unwrap().id;
-            library.untag_item(id, tag)
+            library.untag(&item_node(id), tag)
         })
         .detach();
         assert!(store.is_busy());
@@ -57,7 +58,7 @@ fn a_failed_write_keeps_the_error_and_the_next_write_clears_it(cx: &mut TestAppC
     assert_eq!(cx.foreground_executor().block_on(failed), None);
     store.read_with(cx, |store, _| assert!(store.error().is_some()));
 
-    store.update(cx, |store, cx| store.change(cx, move |library| library.tag_item(id, "ok")).detach());
+    store.update(cx, |store, cx| store.change(cx, move |library| library.tag(&item_node(id), "ok")).detach());
     cx.run_until_parked();
     store.read_with(cx, |store, _| assert!(store.error().is_none()));
 }

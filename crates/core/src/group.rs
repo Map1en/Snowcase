@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use snowcase_formats::{ArchiveEntry, FileKind};
 
-use crate::names::{CodePage, name_key, repair_mojibake, title_of};
+use crate::names::{CodePage, name_key, repair_mojibake, title_of, version_of};
 use crate::scan::FoundFile;
 
 const SIGNALS: &[&str] = &["unitypackage", "fbx", "blend", "vrm", "psd", "prefab"];
@@ -17,6 +17,7 @@ pub struct PlannedFile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Group {
     pub title: String,
+    pub version: Option<String>,
     pub files: Vec<PlannedFile>,
 }
 
@@ -182,20 +183,44 @@ pub fn plan(
         }
     }
 
-    let mut by_key: HashMap<String, usize> = HashMap::new();
-    for (unit, u) in units.iter().enumerate() {
-        let name = if u.is_dir {
-            repair_mojibake(&u.name, code_page).unwrap_or_else(|| u.name.clone())
-        } else {
-            shown(u.files[0])
+    let names: Vec<String> = units
+        .iter()
+        .map(|u| match u.is_dir {
+            true => repair_mojibake(&u.name, code_page).unwrap_or_else(|| u.name.clone()),
+            false => shown(u.files[0]),
+        })
+        .collect();
+    let mut versions: HashMap<usize, String> = HashMap::new();
+    for (unit, name) in names.iter().enumerate() {
+        if let Some(version) = version_of(name) {
+            versions.entry(sets.find(unit)).or_insert(version);
+        }
+    }
+    let mut by_key: HashMap<String, Vec<usize>> = HashMap::new();
+    for (unit, name) in names.iter().enumerate() {
+        let Some(key) = name_key(name) else {
+            continue;
         };
-        if let Some(key) = name_key(&name) {
-            match by_key.get(&key) {
-                Some(&first) => sets.union(first, unit),
-                None => {
-                    by_key.insert(key, unit);
+        let root = sets.find(unit);
+        let mine = versions.get(&root).cloned();
+        let candidates = by_key.entry(key).or_default();
+        let other = candidates.iter().map(|c| sets.find(*c)).find(|other| {
+            *other == root
+                || match (&mine, versions.get(other)) {
+                    (Some(a), Some(b)) => a == b,
+                    _ => true,
+                }
+        });
+        match other {
+            Some(other) if other == root => {}
+            Some(other) => {
+                let version = versions.get(&other).cloned().or(mine);
+                sets.union(other, root);
+                if let Some(version) = version {
+                    versions.insert(sets.find(root), version);
                 }
             }
+            None => candidates.push(root),
         }
     }
 
@@ -217,12 +242,8 @@ pub fn plan(
                 (archive, u.is_dir, std::cmp::Reverse(*unit))
             })
             .unwrap();
-        let lead_unit = &units[lead];
-        let lead_name = if lead_unit.is_dir {
-            repair_mojibake(&lead_unit.name, code_page).unwrap_or_else(|| lead_unit.name.clone())
-        } else {
-            shown(lead_unit.files[0])
-        };
+        let lead_name = &names[lead];
+        let version = versions.get(&sets.find(lead)).cloned();
         let mut planned: Vec<PlannedFile> = members_of_group
             .iter()
             .flat_map(|unit| units[*unit].files.iter().copied())
@@ -234,7 +255,8 @@ pub fn plan(
             .collect();
         planned.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
         groups.push(Group {
-            title: title_of(&lead_name),
+            title: title_of(lead_name),
+            version,
             files: planned,
         });
     }

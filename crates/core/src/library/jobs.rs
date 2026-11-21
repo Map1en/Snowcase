@@ -84,7 +84,7 @@ impl Library {
                 continue;
             };
             let size = u64::try_from(blob.size).unwrap_or(0);
-            if !blob.fingerprint.starts_with("b3:") {
+            if blob.fingerprint.is_none() {
                 work.push(Work {
                     blob_id: blob.id,
                     path: path.clone(),

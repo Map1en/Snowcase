@@ -259,7 +259,7 @@ fn query_combines_scope_with_search_over_titles_tags_and_file_names() {
     let (_dir, mut library) = sample();
     let gloves = id_of(&library, "Gloves");
     let hair = id_of(&library, "Hair");
-    let kikyo = library.tag_item(hair, " Kikyo ").unwrap().unwrap();
+    let kikyo = library.tag(&item_node(hair), " Kikyo ").unwrap().unwrap();
     let folder = library.create_folder(None, "Avatars").unwrap().unwrap();
     library.put_in_folder(gloves, folder).unwrap();
 
@@ -275,7 +275,7 @@ fn blank_tags_and_folders_are_ignored_and_sibling_folders_are_unique() {
     let (_dir, mut library) = sample();
     let hair = id_of(&library, "Hair");
 
-    assert_eq!(library.tag_item(hair, "   ").unwrap(), None);
+    assert_eq!(library.tag(&item_node(hair), "   ").unwrap(), None);
     assert_eq!(library.create_folder(None, " ").unwrap(), None);
     let avatars = library.create_folder(None, "Avatars").unwrap();
     assert_eq!(library.create_folder(None, " avatars ").unwrap(), avatars);
@@ -296,12 +296,12 @@ fn tag_counts_skip_tags_no_item_uses_any_more() {
     let (_dir, mut library) = sample();
     let hair = id_of(&library, "Hair");
     let gloves = id_of(&library, "Gloves");
-    let outfit = library.tag_item(hair, "outfit").unwrap().unwrap();
-    library.tag_item(gloves, "outfit").unwrap();
+    let outfit = library.tag(&item_node(hair), "outfit").unwrap().unwrap();
+    library.tag(&item_node(gloves), "outfit").unwrap();
 
-    library.untag_item(hair, outfit).unwrap();
+    library.untag(&item_node(hair), outfit).unwrap();
     assert_eq!(library.tag_counts().len(), 1);
-    library.untag_item(gloves, outfit).unwrap();
+    library.untag(&item_node(gloves), outfit).unwrap();
 
     assert!(library.tag_counts().is_empty());
 }
@@ -320,10 +320,10 @@ fn every_write_keeps_the_snapshot_equal_to_a_full_reload() {
     let gloves = id_of(&library, "Gloves");
     let hair = id_of(&library, "Hair");
 
-    let outfit = library.tag_item(gloves, "outfit").unwrap().unwrap();
-    library.tag_item(hair, "outfit").unwrap();
+    let outfit = library.tag(&item_node(gloves), "outfit").unwrap().unwrap();
+    library.tag(&item_node(hair), "outfit").unwrap();
     assert_matches_a_full_reload(&library, dir.path());
-    library.untag_item(gloves, outfit).unwrap();
+    library.untag(&item_node(gloves), outfit).unwrap();
     let folder = library.create_folder(None, "Avatars").unwrap().unwrap();
     library.put_in_folder(hair, folder).unwrap();
     library.put_in_folder(gloves, folder).unwrap();
@@ -349,4 +349,27 @@ fn every_write_keeps_the_snapshot_equal_to_a_full_reload() {
         .unwrap();
 
     assert_matches_a_full_reload(&library, dir.path());
+}
+
+#[test]
+fn a_tag_on_a_file_finds_its_item_and_spellings_share_one_tag() {
+    let (_dir, mut library) = sample();
+    let gloves = id_of(&library, "Gloves");
+    let blob_id = library.files(gloves)[0].blob.id;
+    let file = FacetNode {
+        item_id: gloves,
+        blob_id: Some(blob_id),
+        inner_path: None,
+    };
+
+    let olive = library.tag(&file, "Olive Branch").unwrap().unwrap();
+    let again = library.tag(&item_node(gloves), " ＯＬＩＶＥ branch ").unwrap().unwrap();
+
+    assert_eq!(olive, again);
+    assert_eq!(library.snapshot().catalog.tags[0].name, "Olive Branch");
+    assert_eq!(titles(&library.query(&Scope::Tag(olive), "", SortKey::Name)), ["Gloves"]);
+    assert_eq!(titles(&library.query(&Scope::All, "olive", SortKey::Name)), ["Gloves"]);
+    library.untag(&item_node(gloves), olive).unwrap();
+    assert!(library.tags_of(gloves).is_empty());
+    assert_eq!(titles(&library.query(&Scope::Tag(olive), "", SortKey::Name)), ["Gloves"]);
 }

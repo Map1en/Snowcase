@@ -1,6 +1,6 @@
 DROP TABLE item_folder;
 DROP TABLE folder;
-DROP TABLE item_tag;
+DROP TABLE node_tag;
 DROP TABLE tag;
 DROP TABLE item_image;
 DROP TABLE facet;

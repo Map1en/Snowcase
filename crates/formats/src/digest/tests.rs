@@ -23,10 +23,10 @@ fn the_fingerprint_covers_size_head_and_tail_but_not_the_middle() {
 }
 
 #[test]
-fn small_files_hash_all_their_bytes_and_fingerprints_are_tagged() {
+fn small_files_hash_all_their_bytes() {
     assert_ne!(fingerprint(b"abc"), fingerprint(b"abd"));
     assert_eq!(fingerprint(b"abc"), fingerprint(b"abc"));
-    assert!(fingerprint(b"").starts_with("b3:"));
+    assert_eq!(fingerprint(b"").len(), 64);
     let between = vec![7u8; QUICK_SPAN as usize + 10];
     assert_eq!(fingerprint(&between), fingerprint(&between.clone()));
 }

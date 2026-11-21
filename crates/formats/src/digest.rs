@@ -15,7 +15,7 @@ pub fn quick_fingerprint(mut reader: impl Read + Seek, size: u64) -> io::Result<
         reader.take(tail).read_to_end(&mut rest)?;
         hasher.update(&rest);
     }
-    Ok(format!("b3:{}", hasher.finalize().to_hex()))
+    Ok(hasher.finalize().to_hex().to_string())
 }
 
 pub fn crc32(mut reader: impl Read) -> io::Result<u32> {

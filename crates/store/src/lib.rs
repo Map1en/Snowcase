@@ -162,9 +162,9 @@ impl Store {
                 .select(ItemImage::as_select())
                 .load(conn)?,
             tags: Vec::new(),
-            item_tags: item_tag::table
-                .order((item_tag::item_id, item_tag::tag_id))
-                .select(ItemTag::as_select())
+            node_tags: node_tag::table
+                .order(node_tag::id)
+                .select(NodeTag::as_select())
                 .load(conn)?,
             folders: Vec::new(),
             item_folders: item_folder::table
@@ -252,11 +252,11 @@ impl Store {
                     .select(ItemImage::as_select())
                     .load(conn)?,
             );
-            rows.item_tags.extend(
-                item_tag::table
-                    .filter(item_tag::item_id.eq_any(ids))
-                    .order((item_tag::item_id, item_tag::tag_id))
-                    .select(ItemTag::as_select())
+            rows.node_tags.extend(
+                node_tag::table
+                    .filter(node_tag::item_id.eq_any(ids))
+                    .order(node_tag::id)
+                    .select(NodeTag::as_select())
                     .load(conn)?,
             );
             rows.item_folders.extend(
@@ -304,15 +304,17 @@ impl Store {
     pub fn add_file(&mut self, file: &FileImport) -> Result<BlobId> {
         self.conn.transaction(|conn| {
             let now = now_ms();
-            let existing: Option<(LocationId, BlobId, String)> = blob_location::table
+            let existing: Option<(LocationId, BlobId, i64, i64)> = blob_location::table
                 .inner_join(blob::table)
                 .filter(blob_location::root_id.is(file.root_id))
                 .filter(blob_location::rel_path.eq(&file.rel_path))
-                .select((blob_location::id, blob::id, blob::fingerprint))
+                .select((blob_location::id, blob::id, blob::size, blob_location::modified_ms))
                 .first(conn)
                 .optional()?;
             let blob_id = match existing {
-                Some((location, blob_id, fingerprint)) if fingerprint == file.fingerprint => {
+                Some((location, blob_id, size, modified_ms))
+                    if size == file.size && modified_ms == file.modified_ms =>
+                {
                     diesel::update(blob_location::table.find(location))
                         .set((
                             blob_location::modified_ms.eq(file.modified_ms),
@@ -322,7 +324,7 @@ impl Store {
                         .execute(conn)?;
                     blob_id
                 }
-                Some((location, _, _)) => {
+                Some((location, ..)) => {
                     let blob_id = insert_blob(conn, file)?;
                     diesel::update(blob_location::table.find(location))
                         .set((
@@ -499,24 +501,36 @@ impl Store {
         })
     }
 
-    pub fn tag_item(&mut self, item_id: ItemId, name: &str) -> Result<TagId> {
+    pub fn tag_node(&mut self, node: &FacetNode, name: &str, key: &str) -> Result<TagId> {
         self.conn.transaction(|conn| {
             diesel::insert_or_ignore_into(tag::table)
-                .values(tag::name.eq(name))
+                .values((tag::name.eq(name), tag::key.eq(key)))
                 .execute(conn)?;
             let tag_id: TagId = tag::table
-                .filter(tag::name.eq(name))
+                .filter(tag::key.eq(key))
                 .select(tag::id)
                 .first(conn)?;
-            diesel::insert_or_ignore_into(item_tag::table)
-                .values(ItemTag { item_id, tag_id })
+            diesel::insert_or_ignore_into(node_tag::table)
+                .values((
+                    node_tag::item_id.eq(node.item_id),
+                    node_tag::blob_id.eq(node.blob_id),
+                    node_tag::inner_path.eq(node.inner_path.as_deref()),
+                    node_tag::tag_id.eq(tag_id),
+                ))
                 .execute(conn)?;
             Ok(tag_id)
         })
     }
 
-    pub fn untag_item(&mut self, item_id: ItemId, tag_id: TagId) -> Result<()> {
-        diesel::delete(item_tag::table.find((item_id, tag_id))).execute(&mut self.conn)?;
+    pub fn untag_node(&mut self, node: &FacetNode, tag_id: TagId) -> Result<()> {
+        diesel::delete(
+            node_tag::table
+                .filter(node_tag::item_id.eq(node.item_id))
+                .filter(node_tag::blob_id.is(node.blob_id))
+                .filter(node_tag::inner_path.is(node.inner_path.as_deref()))
+                .filter(node_tag::tag_id.eq(tag_id)),
+        )
+        .execute(&mut self.conn)?;
         Ok(())
     }
 
@@ -554,7 +568,6 @@ fn insert_blob(conn: &mut SqliteConnection, file: &FileImport) -> QueryResult<Bl
     diesel::insert_into(blob::table)
         .values((
             blob::size.eq(file.size),
-            blob::fingerprint.eq(&file.fingerprint),
             blob::crc32.eq(file.crc32),
             blob::kind.eq(file.kind),
         ))

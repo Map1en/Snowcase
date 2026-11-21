@@ -149,7 +149,19 @@ impl Library {
                     Some((item, _)) => *item,
                     None => {
                         report.new_items += 1;
-                        store.create_item(&group.title)?
+                        let item = store.create_item(&group.title)?;
+                        if let Some(version) = &group.version {
+                            store.replace_facets(
+                                &super::item_node(item),
+                                FacetKey::Version,
+                                FacetOrigin::Auto,
+                                &[FacetValue {
+                                    value: version.clone(),
+                                    target_item_id: None,
+                                }],
+                            )?;
+                        }
+                        item
                     }
                 };
                 touched.insert(item);
@@ -164,7 +176,6 @@ impl Library {
                         display_name: planned.display_name.clone(),
                         size: i64::try_from(file.size).unwrap_or(i64::MAX),
                         modified_ms: file.modified_ms,
-                        fingerprint: format!("{}:{}", file.size, file.modified_ms),
                         crc32: None,
                         kind: BlobKind::from(file.kind),
                     })?;

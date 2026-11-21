@@ -110,6 +110,10 @@ fn without_versions(name: &str) -> String {
     name
 }
 
+pub fn tag_key(name: &str) -> String {
+    name.trim().nfkc().collect::<String>().to_lowercase()
+}
+
 pub fn title_of(name: &str) -> String {
     let stem = DUPLICATE.replace(&EXTENSIONS.replace(name, ""), "").into_owned();
     let title = without_versions(&stem);

@@ -139,18 +139,25 @@ fn scanning_again_without_changes_changes_nothing() {
 }
 
 #[test]
-fn a_new_version_joins_the_existing_item() {
+fn a_new_version_becomes_its_own_item_with_its_version() {
     let mut fx = fixture();
     outfit(fx.root());
     fx.scan();
-    let item = fx.only_item();
+    let old = fx.only_item();
 
     write_zip(fx.root(), "Outfit_v1.1.zip", &[("Outfit/Outfit.unitypackage", b"newer package")]);
     let report = fx.scan();
 
-    assert_eq!((report.new_items, report.new_files), (0, 1));
-    assert_eq!(fx.only_item(), item);
-    assert_eq!(fx.library.files(item).len(), 4);
+    assert_eq!((report.new_items, report.new_files), (1, 1));
+    assert_eq!(fx.library.files(old).len(), 3);
+    let mut versions: Vec<String> = fx
+        .library
+        .items()
+        .iter()
+        .map(|item| fx.library.facets(&crate::library::item_node(item.id), FacetKey::Version)[0].value.clone())
+        .collect();
+    versions.sort();
+    assert_eq!(versions, ["1.0", "1.1"]);
 }
 
 #[test]

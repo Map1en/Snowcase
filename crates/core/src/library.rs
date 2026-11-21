@@ -8,6 +8,7 @@ use std::time::UNIX_EPOCH;
 
 use snowcase_formats::{FileKind, HEADER_LEN, detect_kind};
 
+use crate::names::tag_key;
 use crate::scan::ArchiveCache;
 use snowcase_store::{
     Blob, BlobId, BlobKind, BlobLocation, Catalog, Facet, FacetKey, FacetNode, FacetOrigin, FacetValue,
@@ -207,7 +208,7 @@ impl Library {
             .collect();
         let fresh: Vec<FileInfo> = files
             .into_iter()
-            .filter(|file| known.insert(file.path.clone()))
+            .filter(|file| known.insert(file.path.replace('\\', "/")))
             .collect();
         let added = fresh.len();
         let ids = self.store.transaction(|store| {
@@ -225,21 +226,21 @@ impl Library {
         self.refresh_items(&[id])
     }
 
-    pub fn tag_item(&mut self, id: ItemId, name: &str) -> Result<Option<TagId>, StoreError> {
+    pub fn tag(&mut self, node: &FacetNode, name: &str) -> Result<Option<TagId>, StoreError> {
         let name = name.trim();
         if name.is_empty() {
             return Ok(None);
         }
-        let tag = self.store.tag_item(id, name)?;
+        let tag = self.store.tag_node(node, name, &tag_key(name))?;
         let tags = self.store.load_tags()?;
         Arc::make_mut(&mut self.snapshot).catalog.tags = tags;
-        self.refresh_items(&[id])?;
+        self.refresh_items(&[node.item_id])?;
         Ok(Some(tag))
     }
 
-    pub fn untag_item(&mut self, id: ItemId, tag: TagId) -> Result<(), StoreError> {
-        self.store.untag_item(id, tag)?;
-        self.refresh_items(&[id])
+    pub fn untag(&mut self, node: &FacetNode, tag: TagId) -> Result<(), StoreError> {
+        self.store.untag_node(node, tag)?;
+        self.refresh_items(&[node.item_id])
     }
 
     pub fn create_folder(
@@ -340,7 +341,7 @@ impl Snapshot {
         catalog.files.retain(|file| !ids.contains(&file.item_id));
         catalog.facets.retain(|facet| !ids.contains(&facet.item_id));
         catalog.images.retain(|image| !ids.contains(&image.item_id));
-        catalog.item_tags.retain(|link| !ids.contains(&link.item_id));
+        catalog.node_tags.retain(|link| !ids.contains(&link.item_id));
         catalog.item_folders.retain(|link| !ids.contains(&link.item_id));
         upsert(&mut catalog.items, rows.items, |item| item.id);
         upsert(&mut catalog.sources, rows.sources, |source| source.id);
@@ -354,7 +355,7 @@ impl Snapshot {
         catalog.blobs.retain(|blob| referenced.contains(&blob.id));
         catalog.locations.retain(|location| referenced.contains(&location.blob_id));
         upsert(&mut catalog.images, rows.images, |image| (image.item_id, image.position));
-        upsert(&mut catalog.item_tags, rows.item_tags, |link| (link.item_id, link.tag_id));
+        upsert(&mut catalog.node_tags, rows.node_tags, |link| link.id);
         upsert(&mut catalog.item_folders, rows.item_folders, |link| (link.item_id, link.folder_id));
         self.facts.retain(|id, _| !ids.contains(id));
         self.facts
@@ -429,10 +430,15 @@ impl Snapshot {
     }
 
     pub fn tags_of(&self, id: ItemId) -> Vec<&Tag> {
-        self.facts
-            .get(&id)
-            .map(|facts| facts.tags.iter().filter_map(|tag| self.tag(*tag)).collect())
-            .unwrap_or_default()
+        let mut tags: Vec<&Tag> = self
+            .catalog
+            .node_tags
+            .iter()
+            .filter(|link| link.item_id == id && link.blob_id.is_none())
+            .filter_map(|link| self.tag(link.tag_id))
+            .collect();
+        tags.sort_by_key(|tag| tag.id);
+        tags
     }
 
     pub fn tag_counts(&self) -> Vec<(&Tag, usize)> {
@@ -606,7 +612,7 @@ fn facts_of(catalog: &Catalog, wanted: impl Fn(ItemId) -> bool) -> HashMap<ItemI
             }
         }
     }
-    for link in &catalog.item_tags {
+    for link in &catalog.node_tags {
         if let Some(entry) = facts.get_mut(&link.item_id) {
             entry.tags.insert(link.tag_id);
         }
@@ -633,12 +639,11 @@ fn import_file(store: &mut Store, file: FileInfo) -> Result<ItemId, StoreError> 
     store.add_file(&FileImport {
         item_id: item,
         root_id: None,
-        rel_path: file.path,
+        rel_path: file.path.replace('\\', "/"),
         file_name: file.name,
         display_name: None,
         size: i64::try_from(file.size).unwrap_or(i64::MAX),
         modified_ms: file.modified_ms,
-        fingerprint: format!("{}:{}", file.size, file.modified_ms),
         crc32: None,
         kind: BlobKind::from(file.kind),
     })?;

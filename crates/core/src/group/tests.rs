@@ -110,7 +110,7 @@ fn folders_named_after_file_types_rejoin_their_zip_even_without_a_signal_of_thei
 }
 
 #[test]
-fn versions_and_browser_duplicates_of_one_product_join_by_name() {
+fn different_versions_stay_apart_and_carry_their_version() {
     let library = Library::new()
         .file("Outfit_v1.0.unitypackage", 10)
         .file("Outfit_v1.1.unitypackage", 11)
@@ -119,11 +119,65 @@ fn versions_and_browser_duplicates_of_one_product_join_by_name() {
 
     let plan = library.plan();
 
+    let mut found: Vec<_> = plan
+        .groups
+        .iter()
+        .map(|group| (group.title.clone(), group.version.clone(), group.files.len()))
+        .collect();
+    found.sort();
     assert_eq!(
-        shape(&plan),
+        found,
         [
-            ("Outfit".into(), vec!["Outfit_v1.0.unitypackage".into(), "Outfit_v1.1.unitypackage".into()]),
-            ("stripe".into(), vec!["stripe (1).zip".into(), "stripe.zip".into()]),
+            ("Outfit".into(), Some("1.0".into()), 1),
+            ("Outfit".into(), Some("1.1".into()), 1),
+            ("stripe".into(), None, 2),
+        ]
+    );
+}
+
+fn grouped(plan: &Plan) -> Vec<Vec<String>> {
+    let mut groups: Vec<Vec<String>> = plan
+        .groups
+        .iter()
+        .map(|group| group.files.iter().map(|file| file.rel_path.clone()).collect())
+        .collect();
+    groups.sort();
+    groups
+}
+
+#[test]
+fn parts_of_one_version_and_unversioned_parts_still_join() {
+    let library = Library::new()
+        .file("HonmeiKnit_Material_v1.0.unitypackage", 10)
+        .file("HonmeiKnit_Prefab_Shinano_v1.0.unitypackage", 11)
+        .file("YumekawaKaren_FullSet_Ver1.3.unitypackage", 12)
+        .file("YumekawaKaren_Tex.unitypackage", 13);
+
+    let plan = library.plan();
+
+    assert_eq!(
+        grouped(&plan),
+        [
+            vec!["HonmeiKnit_Material_v1.0.unitypackage".to_owned(), "HonmeiKnit_Prefab_Shinano_v1.0.unitypackage".to_owned()],
+            vec!["YumekawaKaren_FullSet_Ver1.3.unitypackage".to_owned(), "YumekawaKaren_Tex.unitypackage".to_owned()],
+        ]
+    );
+}
+
+#[test]
+fn an_unversioned_part_does_not_chain_two_versions_together() {
+    let library = Library::new()
+        .file("RibbonKit_v1.0.unitypackage", 10)
+        .file("RibbonKit_Tex.unitypackage", 11)
+        .file("RibbonKit_v2.0.unitypackage", 12);
+
+    let plan = library.plan();
+
+    assert_eq!(
+        grouped(&plan),
+        [
+            vec!["RibbonKit_Tex.unitypackage".to_owned(), "RibbonKit_v1.0.unitypackage".to_owned()],
+            vec!["RibbonKit_v2.0.unitypackage".to_owned()],
         ]
     );
 }

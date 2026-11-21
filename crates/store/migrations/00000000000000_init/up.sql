@@ -36,7 +36,7 @@ CREATE TABLE blob (
     id INTEGER PRIMARY KEY NOT NULL,
     hash TEXT UNIQUE,
     size BIGINT NOT NULL,
-    fingerprint TEXT NOT NULL,
+    fingerprint TEXT,
     crc32 BIGINT,
     kind TEXT NOT NULL
 );
@@ -92,15 +92,21 @@ CREATE INDEX item_image_media ON item_image(media_hash);
 
 CREATE TABLE tag (
     id INTEGER PRIMARY KEY NOT NULL,
-    name TEXT NOT NULL UNIQUE COLLATE NOCASE
+    name TEXT NOT NULL,
+    key TEXT NOT NULL UNIQUE
 );
 
-CREATE TABLE item_tag (
+CREATE TABLE node_tag (
+    id INTEGER PRIMARY KEY NOT NULL,
     item_id BIGINT NOT NULL REFERENCES item(id) ON DELETE CASCADE,
+    blob_id BIGINT,
+    inner_path TEXT,
     tag_id BIGINT NOT NULL REFERENCES tag(id) ON DELETE CASCADE,
-    PRIMARY KEY (item_id, tag_id)
+    FOREIGN KEY (item_id, blob_id) REFERENCES item_file(item_id, blob_id) ON DELETE CASCADE,
+    CHECK (inner_path IS NULL OR blob_id IS NOT NULL)
 );
-CREATE INDEX item_tag_tag ON item_tag(tag_id);
+CREATE UNIQUE INDEX node_tag_node ON node_tag(item_id, IFNULL(blob_id, 0), IFNULL(inner_path, ''), tag_id);
+CREATE INDEX node_tag_tag ON node_tag(tag_id);
 
 CREATE TABLE folder (
     id INTEGER PRIMARY KEY NOT NULL,

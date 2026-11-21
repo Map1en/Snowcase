@@ -84,7 +84,7 @@ fn applied_results_are_kept_so_nothing_is_left_to_do_even_after_reopening() {
     assert!(library.pending_work().is_empty());
     assert!(copy_is_extracted(&library));
     let reopened = Library::open(data.path()).unwrap();
-    assert!(reopened.snapshot.catalog.blobs.iter().all(|blob| blob.fingerprint.starts_with("b3:")));
+    assert!(reopened.snapshot.catalog.blobs.iter().all(|blob| blob.fingerprint.is_some()));
     assert_eq!(reopened.snapshot.catalog, library.snapshot.catalog);
 }
 

@@ -5,7 +5,7 @@ diesel::table! {
         id -> BigInt,
         hash -> Nullable<Text>,
         size -> BigInt,
-        fingerprint -> Text,
+        fingerprint -> Nullable<Text>,
         crc32 -> Nullable<BigInt>,
         kind -> Text,
     }
@@ -98,19 +98,22 @@ diesel::table! {
 }
 
 diesel::table! {
-    item_tag (item_id, tag_id) {
-        item_id -> BigInt,
-        tag_id -> BigInt,
-    }
-}
-
-diesel::table! {
     media (hash) {
         hash -> Text,
         mime -> Text,
         width -> Nullable<Integer>,
         height -> Nullable<Integer>,
         bytes -> BigInt,
+    }
+}
+
+diesel::table! {
+    node_tag (id) {
+        id -> BigInt,
+        item_id -> BigInt,
+        blob_id -> Nullable<BigInt>,
+        inner_path -> Nullable<Text>,
+        tag_id -> BigInt,
     }
 }
 
@@ -125,6 +128,7 @@ diesel::table! {
     tag (id) {
         id -> BigInt,
         name -> Text,
+        key -> Text,
     }
 }
 
@@ -137,8 +141,8 @@ diesel::joinable!(item_folder -> item (item_id));
 diesel::joinable!(item_image -> item (item_id));
 diesel::joinable!(item_image -> media (media_hash));
 diesel::joinable!(item_source -> item (item_id));
-diesel::joinable!(item_tag -> item (item_id));
-diesel::joinable!(item_tag -> tag (tag_id));
+diesel::joinable!(node_tag -> item (item_id));
+diesel::joinable!(node_tag -> tag (tag_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     blob,
@@ -150,8 +154,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     item_folder,
     item_image,
     item_source,
-    item_tag,
     media,
+    node_tag,
     root,
     tag,
 );

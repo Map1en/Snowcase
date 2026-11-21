@@ -32,7 +32,7 @@ macro_rules! id_type {
     )*};
 }
 
-id_type!(ItemId, SourceId, RootId, BlobId, LocationId, FacetId, TagId, FolderId);
+id_type!(ItemId, SourceId, RootId, BlobId, LocationId, FacetId, TagId, NodeTagId, FolderId);
 
 #[derive(Debug, thiserror::Error)]
 #[error("unknown {kind} value {value:?}")]
@@ -114,10 +114,12 @@ text_enum!(ImageOrigin {
 });
 
 text_enum!(FacetKey {
+    Category => "category",
     Target => "target",
+    Part => "part",
+    Color => "color",
     Version => "version",
     Role => "role",
-    Color => "color",
 });
 
 impl FacetKey {
@@ -206,7 +208,7 @@ pub struct Blob {
     pub id: BlobId,
     pub hash: Option<String>,
     pub size: i64,
-    pub fingerprint: String,
+    pub fingerprint: Option<String>,
     pub crc32: Option<i64>,
     pub kind: BlobKind,
 }
@@ -244,7 +246,6 @@ pub struct FileImport {
     pub display_name: Option<String>,
     pub size: i64,
     pub modified_ms: i64,
-    pub fingerprint: String,
     pub crc32: Option<i64>,
     pub kind: BlobKind,
 }
@@ -300,12 +301,16 @@ pub struct ItemImage {
 pub struct Tag {
     pub id: TagId,
     pub name: String,
+    pub key: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable, Insertable)]
-#[diesel(table_name = item_tag, check_for_backend(Sqlite))]
-pub struct ItemTag {
+#[derive(Debug, Clone, PartialEq, Eq, Queryable, Selectable)]
+#[diesel(table_name = node_tag, check_for_backend(Sqlite))]
+pub struct NodeTag {
+    pub id: NodeTagId,
     pub item_id: ItemId,
+    pub blob_id: Option<BlobId>,
+    pub inner_path: Option<String>,
     pub tag_id: TagId,
 }
 
@@ -337,7 +342,7 @@ pub struct Catalog {
     pub media: Vec<Media>,
     pub images: Vec<ItemImage>,
     pub tags: Vec<Tag>,
-    pub item_tags: Vec<ItemTag>,
+    pub node_tags: Vec<NodeTag>,
     pub folders: Vec<Folder>,
     pub item_folders: Vec<ItemFolder>,
 }
