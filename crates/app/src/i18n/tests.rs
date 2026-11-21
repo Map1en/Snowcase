@@ -38,13 +38,3 @@ fn every_key_is_translated_into_every_language() {
         assert_eq!(keys(locale), english, "{locale}");
     }
 }
-
-#[test]
-fn every_recognized_category_has_a_name_in_every_language() {
-    for category in snowcase_core::recognize::categories() {
-        for (locale, _) in LOCALES {
-            let key = format!("category.{category}");
-            assert!(crate::_rust_i18n_backend().translate(locale, &key).is_some(), "{key} in {locale}");
-        }
-    }
-}

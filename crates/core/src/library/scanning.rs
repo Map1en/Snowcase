@@ -10,7 +10,6 @@ use snowcase_store::{
 use super::Library;
 use crate::group;
 use crate::names::{CodePage, version_of};
-use crate::recognize::recognize;
 use crate::scan::{self, FoundFile, KnownFile, WalkError};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -151,31 +150,6 @@ impl Library {
                     None => {
                         report.new_items += 1;
                         let item = store.create_item(&group.title)?;
-                        let names: Vec<&str> = group
-                            .files
-                            .iter()
-                            .map(|file| {
-                                let path = file.display_name.as_deref().unwrap_or(&file.rel_path);
-                                path.rsplit('/').next().unwrap_or(path)
-                            })
-                            .collect();
-                        let found = recognize(&group.title, &names);
-                        let values = |values: &[&str]| -> Vec<FacetValue> {
-                            values
-                                .iter()
-                                .map(|value| FacetValue {
-                                    value: (*value).to_owned(),
-                                    target_item_id: None,
-                                })
-                                .collect()
-                        };
-                        let node = super::item_node(item);
-                        if let Some(category) = found.category {
-                            store.replace_facets(&node, FacetKey::Category, FacetOrigin::Auto, &values(&[category]))?;
-                        }
-                        if !found.targets.is_empty() {
-                            store.replace_facets(&node, FacetKey::Target, FacetOrigin::Auto, &values(&found.targets))?;
-                        }
                         if let Some(version) = &group.version {
                             store.replace_facets(
                                 &super::item_node(item),
