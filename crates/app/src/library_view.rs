@@ -1,3 +1,6 @@
+mod package_tree;
+
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -13,7 +16,7 @@ use snowcase_core::library::{
     item_node, shown_name,
 };
 use snowcase_core::names::CodePage;
-use snowcase_core::{FacetKey, FileKind, ItemId, LocationState, StoreError};
+use snowcase_core::{BlobId, FacetKey, FileKind, ItemId, LocationState, StoreError};
 
 use crate::i18n::{self, Locale, tr};
 use crate::library_store::LibraryStore;
@@ -27,6 +30,16 @@ const DETAIL_WIDTH: f32 = 460.;
 const SUGGESTIONS: usize = 6;
 const RESCAN_AFTER: Duration = Duration::from_secs(60);
 const UNSUPPORTED_LISTED: usize = 20;
+const TREE_FILES: usize = 200;
+
+type TreeNode = (BlobId, String, String);
+
+struct Tree<'a> {
+    blob: BlobId,
+    member: String,
+    paths: &'a [String],
+    hit: Option<&'a str>,
+}
 const TAG_SEPARATORS: [char; 3] = [',', '，', '、'];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +88,7 @@ pub struct LibraryView {
     scanning: bool,
     last_scan: Option<Instant>,
     unsupported: Vec<String>,
+    open_nodes: HashSet<TreeNode>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -174,6 +188,7 @@ impl LibraryView {
             scanning: false,
             last_scan: None,
             unsupported: Vec::new(),
+            open_nodes: HashSet::new(),
             _subscriptions: subscriptions,
         };
         view.apply_locale(window, cx);
@@ -369,6 +384,7 @@ impl LibraryView {
     fn select(&mut self, id: Option<ItemId>, window: &mut Window, cx: &mut Context<Self>) {
         if self.selected != id {
             self.tag_input.update(cx, |input, cx| input.set_value("", window, cx));
+            self.open_nodes.clear();
         }
         self.selected = id;
         cx.notify();
@@ -960,12 +976,18 @@ impl LibraryView {
 
     fn render_files(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
-        let hit_file = match library.hit(id, &self.filter.search) {
+        let hit = library.hit(id, &self.filter.search);
+        let hit_path = match &hit {
+            Some(Hit::Package { path, .. }) => Some(path.clone()),
+            _ => None,
+        };
+        let hit_file = match hit {
             Some(Hit::File(name)) => Some(name),
             Some(Hit::Package { file, .. }) => Some(file),
             Some(Hit::Tag { file, .. }) => file,
             _ => None,
         };
+        let mut tree_rows = (0usize, 0usize);
         let mut list = section(tr!(cx, "item.files"));
         let mut package_rows = 0usize;
         for (ix, file) in library.files(id).into_iter().enumerate() {
@@ -1019,6 +1041,10 @@ impl LibraryView {
                 .chain(library.packages_in(file.blob.id).into_iter().map(|(member, summary)| (Some(member), summary)));
             for (member, summary) in packages {
                 let text = package_label(member, summary, cx);
+                let package = (file.blob.id, member.unwrap_or_default().to_owned());
+                let node: TreeNode = (package.0, package.1.clone(), String::new());
+                let hit = hit_path.as_deref().filter(|path| summary.paths.iter().any(|own| own == path));
+                let open = self.open_nodes.contains(&node) || hit.is_some();
                 list = list.child(
                     div()
                         .id(("package", package_rows))
@@ -1027,9 +1053,22 @@ impl LibraryView {
                         .text_xs()
                         .text_color(theme.muted_foreground)
                         .truncate()
-                        .child(text),
+                        .cursor_pointer()
+                        .hover(|this| this.text_color(theme.foreground))
+                        .child(text)
+                        .on_click(cx.listener(move |this, _, _, cx| this.toggle_node(node.clone(), cx))),
                 );
                 package_rows += 1;
+                if open {
+                    let tree = Tree {
+                        blob: package.0,
+                        member: package.1.clone(),
+                        paths: &summary.paths,
+                        hit,
+                    };
+                    let top = package_tree::top(&summary.paths);
+                    list = list.children(self.tree_rows(&tree, &top, 2, &mut tree_rows, cx));
+                }
             }
         }
         let hints = library.hints(id);
@@ -1068,6 +1107,66 @@ impl LibraryView {
             );
         }
         list
+    }
+}
+
+impl LibraryView {
+    fn toggle_node(&mut self, node: TreeNode, cx: &mut Context<Self>) {
+        if !self.open_nodes.remove(&node) {
+            self.open_nodes.insert(node);
+        }
+        cx.notify();
+    }
+
+    fn tree_rows(&self, tree: &Tree, folder: &str, depth: usize, rows: &mut (usize, usize), cx: &Context<Self>) -> Vec<AnyElement> {
+        let theme = cx.theme();
+        let indent = px(12. * depth as f32);
+        let entries = package_tree::entries(tree.paths, folder);
+        let mut out = Vec::new();
+        for child in entries.folders {
+            let node: TreeNode = (tree.blob, tree.member.clone(), child.clone());
+            let open = self.open_nodes.contains(&node) || tree.hit.is_some_and(|hit| package_tree::holds(&child, hit));
+            let name = format!("{} {}", if open { "▾" } else { "▸" }, package_tree::shown(&child, folder));
+            out.push(
+                div()
+                    .id(("tree-folder", rows.0))
+                    .test_support()
+                    .pl(indent)
+                    .text_xs()
+                    .truncate()
+                    .cursor_pointer()
+                    .hover(|this| this.bg(theme.list_hover))
+                    .child(name)
+                    .on_click(cx.listener(move |this, _, _, cx| this.toggle_node(node.clone(), cx)))
+                    .into_any_element(),
+            );
+            rows.0 += 1;
+            if open {
+                out.extend(self.tree_rows(tree, &child, depth + 1, rows, cx));
+            }
+        }
+        for (n, file) in entries.files.iter().enumerate() {
+            if n == TREE_FILES {
+                let more = tr!(cx, "tree.more", count = entries.files.len() - TREE_FILES);
+                out.push(div().pl(indent).text_xs().text_color(theme.muted_foreground).child(more).into_any_element());
+                break;
+            }
+            let highlighted = tree.hit == Some(*file);
+            out.push(
+                div()
+                    .id(("tree-file", rows.1))
+                    .test_support()
+                    .pl(indent)
+                    .text_xs()
+                    .truncate()
+                    .text_color(theme.muted_foreground)
+                    .when(highlighted, |this| this.bg(theme.warning.opacity(0.2)).text_color(theme.foreground))
+                    .child(package_tree::shown(file, folder).to_owned())
+                    .into_any_element(),
+            );
+            rows.1 += 1;
+        }
+        out
     }
 }
 

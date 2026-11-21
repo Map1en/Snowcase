@@ -325,3 +325,41 @@ fn searching_a_part_finds_the_item_whose_package_holds_it(cx: &mut TestAppContex
     assert!(exists(window, ("hit", 0usize), cx));
     read(&view, cx, |view, library| assert_eq!(library.item(view.rows[0]).unwrap().title, "Plumery_Bikini"));
 }
+
+fn bikini_library(cx: &mut TestAppContext) -> (AnyWindowHandle, Entity<LibraryView>, (tempfile::TempDir, tempfile::TempDir)) {
+    let (Fixture { library, dir }, assets) = fixtures::scanned(0);
+    let bikini = fixtures::unitypackage(&[
+        "Assets/Shop/Bikini/Bikini.prefab",
+        "Assets/Shop/Bikini/Parts/Tights_Black.prefab",
+        "Assets/Shop/Bikini/Textures/Body.png",
+    ]);
+    std::fs::write(assets.path().join("Plumery_Bikini.unitypackage"), bikini).unwrap();
+    let (window, view) = open_library(library, cx);
+    (window, view, (dir, assets))
+}
+
+#[gpui_kit::test]
+fn a_package_opens_into_a_folder_tree(cx: &mut TestAppContext) {
+    let (window, _, _keep) = bikini_library(cx);
+
+    click(window, ("asset", 0usize), cx);
+    assert!(!exists(window, ("tree-folder", 0usize), cx));
+    click(window, ("package", 0usize), cx);
+
+    assert_eq!(count(window, "tree-folder", cx), 2, "Parts and Textures under the collapsed Assets/Shop/Bikini");
+    assert_eq!(count(window, "tree-file", cx), 1, "Bikini.prefab");
+    click(window, ("tree-folder", 0usize), cx);
+    assert_eq!(count(window, "tree-file", cx), 2);
+    click(window, ("package", 0usize), cx);
+    assert!(!exists(window, ("tree-folder", 0usize), cx));
+}
+
+#[gpui_kit::test]
+fn a_search_hit_inside_a_package_opens_the_tree_down_to_it(cx: &mut TestAppContext) {
+    let (window, _, _keep) = bikini_library(cx);
+
+    type_into(window, "search", "Tights", cx);
+    click(window, ("asset", 0usize), cx);
+
+    assert_eq!(count(window, "tree-file", cx), 2, "Bikini.prefab and the Tights inside the opened Parts folder");
+}
