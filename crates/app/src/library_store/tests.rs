@@ -3,7 +3,7 @@ use snowcase_core::StoreError;
 use snowcase_core::snapshot::item_node;
 use snowcase_testing::fixtures::{self, Fixture};
 
-use super::LibraryStore;
+use super::{LibraryStore, Stage};
 
 fn store(cx: &mut TestAppContext) -> (Entity<LibraryStore>, impl Sized + use<>) {
     let Fixture { library, dir } = fixtures::library(5, 3);
@@ -69,7 +69,7 @@ fn scanned(count: usize, cx: &mut TestAppContext) -> (Entity<LibraryStore>, impl
 }
 
 fn pending(store: &Entity<LibraryStore>, cx: &mut TestAppContext) -> usize {
-    let left = store.update(cx, |store, cx| store.change(cx, |library| Ok(library.pending_work().len())));
+    let left = store.update(cx, |store, cx| store.change(cx, |library| Ok(library.pending_files().len() + library.pending_packages().len())));
     cx.run_until_parked();
     cx.foreground_executor().block_on(left).unwrap()
 }
@@ -88,7 +88,7 @@ fn background_work_runs_every_file_and_reports_progress(cx: &mut TestAppContext)
     cx.run_until_parked();
 
     let done = progress(&store, cx);
-    assert_eq!((done.done, done.total, done.running), (3, 3, false));
+    assert_eq!((done.stage, done.done, done.total, done.running), (Stage::Packages, 3, 3, false));
     assert_eq!(done.bytes_done, done.bytes_total);
     assert!(done.failures.is_empty());
     assert_eq!(pending(&store, cx), 0);
@@ -104,7 +104,7 @@ fn paused_work_waits_until_resumed(cx: &mut TestAppContext) {
     });
     cx.run_until_parked();
     let paused = progress(&store, cx);
-    assert_eq!((paused.done, paused.total, paused.paused, paused.running), (0, 3, true, true));
+    assert_eq!((paused.stage, paused.done, paused.total, paused.paused, paused.running), (Stage::Files, 0, 3, true, true));
 
     store.update(cx, |store, cx| store.resume_background(cx));
     cx.run_until_parked();
@@ -141,7 +141,7 @@ fn files_that_cannot_be_read_are_reported_and_the_rest_still_run(cx: &mut TestAp
     cx.run_until_parked();
 
     let done = progress(&store, cx);
-    assert_eq!(done.done, 3);
+    assert_eq!((done.stage, done.done), (Stage::Packages, 2));
     assert_eq!(done.failures.len(), 1);
     assert!(done.failures[0].0.ends_with("Outfit01.unitypackage"));
     assert_eq!(pending(&store, cx), 1);
@@ -186,5 +186,58 @@ fn background_progress_does_not_announce_a_new_library_for_every_file(cx: &mut T
     cx.run_until_parked();
 
     assert_eq!(progress(&store, cx).done, 6);
-    assert_eq!(changes.get(), 1, "one batch of results, one change");
+    assert_eq!(changes.get(), 2, "one batch of results per stage, one change each");
+}
+
+#[gpui_kit::test]
+fn new_files_are_organized_before_the_remaining_packages_are_read(cx: &mut TestAppContext) {
+    let (Fixture { library, dir: _dir }, assets) = fixtures::scanned(2);
+    let store = cx.new(|cx| LibraryStore::new(Ok(library), cx));
+    let organized = store.update(cx, |store, cx| {
+        store.change(cx, |library| {
+            let files: Vec<_> = library.pending_files().into_iter().map(snowcase_core::library::run).collect();
+            library.apply_work(&files)
+        })
+    });
+    cx.run_until_parked();
+    cx.foreground_executor().block_on(organized).unwrap();
+    store.update(cx, |store, cx| {
+        store.start_background(cx);
+        store.pause_background(cx);
+    });
+    cx.run_until_parked();
+    let paused = progress(&store, cx);
+    assert_eq!((paused.stage, paused.done, paused.total), (Stage::Packages, 0, 2));
+
+    let stages = std::rc::Rc::new(std::cell::RefCell::new(Vec::<(Stage, usize)>::new()));
+    let seen = stages.clone();
+    let _observer = cx.update(|cx| {
+        cx.observe(&store, move |store, cx| {
+            let progress = store.read(cx).progress();
+            let mut seen = seen.borrow_mut();
+            match seen.last_mut() {
+                Some(last) if last.0 == progress.stage => last.1 = progress.done,
+                _ if progress.running => seen.push((progress.stage, progress.done)),
+                _ => {}
+            }
+        })
+    });
+    std::fs::write(assets.path().join("Later.unitypackage"), fixtures::unitypackage(&["Assets/Shop/Later/Later.prefab"])).unwrap();
+    let root = assets.path().to_path_buf();
+    store.update(cx, |store, cx| {
+        store
+            .change(cx, move |library| library.scan_root(&root, snowcase_core::ingest::names::CodePage::Other))
+            .detach();
+        store.start_background(cx);
+        store.resume_background(cx);
+    });
+    cx.run_until_parked();
+
+    assert_eq!(
+        stages.borrow().iter().map(|(stage, _)| *stage).collect::<Vec<_>>(),
+        [Stage::Packages, Stage::Files, Stage::Packages]
+    );
+    assert_eq!(stages.borrow()[0].1, 0, "no package is read before the new file is organized");
+    assert_eq!(pending(&store, cx), 0);
+    assert!(!progress(&store, cx).running);
 }

@@ -19,7 +19,7 @@ use crate::snapshot::{PackageSummary, item_node};
 pub enum Task {
     Fingerprint,
     Crc { expected: u32 },
-    Package { member: Option<String>, bytes: u64 },
+    Package { member: Option<String>, bytes: u64, fingerprint: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,10 +44,7 @@ impl Work {
 pub enum Done {
     Fingerprint(String),
     Crc(u32),
-    Package {
-        fingerprint: String,
-        assets: Result<Vec<PackageAsset>, String>,
-    },
+    Package(Result<Vec<PackageAsset>, String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,16 +59,12 @@ pub fn run(work: Work) -> Outcome {
             Task::Fingerprint => quick_fingerprint(file, work.size).map(Done::Fingerprint),
             Task::Crc { .. } => crc32(BufReader::new(file)).map(Done::Crc),
             Task::Package { member, .. } => {
-                let fingerprint = quick_fingerprint(file, work.size)?;
-                let reader = BufReader::new(File::open(&work.path)?);
+                let reader = BufReader::new(file);
                 let assets = match member {
                     None => list_unitypackage(reader),
                     Some(member) => list_zipped_unitypackage(reader, member),
                 };
-                Ok(Done::Package {
-                    fingerprint,
-                    assets: assets.map_err(|error| error.to_string()),
-                })
+                Ok(Done::Package(assets.map_err(|error| error.to_string())))
             }
         })
         .map_err(|error| error.to_string());
@@ -79,16 +72,21 @@ pub fn run(work: Work) -> Outcome {
 }
 
 impl Library {
-    pub fn pending_work(&self) -> Vec<Work> {
-        let catalog = &self.snapshot.catalog;
+    fn present_paths(&self) -> HashMap<BlobId, PathBuf> {
         let mut present: HashMap<BlobId, PathBuf> = HashMap::new();
-        for location in &catalog.locations {
+        for location in &self.snapshot.catalog.locations {
             if location.state == LocationState::Present {
                 present
                     .entry(location.blob_id)
                     .or_insert_with(|| PathBuf::from(self.location_path(location)));
             }
         }
+        present
+    }
+
+    pub fn pending_files(&self) -> Vec<Work> {
+        let catalog = &self.snapshot.catalog;
+        let present = self.present_paths();
         let mut expected: HashMap<BlobId, u32> = HashMap::new();
         for file in &catalog.files {
             let (Some(archive), Some(member)) = (file.extracted_from_blob_id, &file.extracted_from_path) else {
@@ -103,50 +101,13 @@ impl Library {
                 expected.insert(file.blob_id, crc);
             }
         }
-        let scanned = |blob: BlobId, member: &str| {
-            self.package_key(blob, member)
-                .is_some_and(|key| self.packages.contains_key(&key))
-        };
-        let mut unpacked: HashMap<BlobId, HashSet<&str>> = HashMap::new();
-        for file in &catalog.files {
-            if let (Some(archive), Some(member)) = (file.extracted_from_blob_id, &file.extracted_from_path) {
-                unpacked.entry(archive).or_default().insert(member);
-            }
-        }
         let mut work = Vec::new();
         for blob in &catalog.blobs {
             let Some(path) = present.get(&blob.id) else {
                 continue;
             };
             let size = u64::try_from(blob.size).unwrap_or(0);
-            let mut packages = Vec::new();
-            if FileKind::from(blob.kind) == FileKind::UnityPackage {
-                let copy_of = catalog
-                    .files
-                    .iter()
-                    .find(|file| file.blob_id == blob.id && file.extracted_from_blob_id.is_some())
-                    .and_then(|file| Some((file.extracted_from_blob_id?, file.extracted_from_path.as_deref()?)));
-                let known = scanned(blob.id, "") || copy_of.is_some_and(|(archive, member)| scanned(archive, member));
-                if !known {
-                    packages.push(Task::Package { member: None, bytes: size });
-                }
-            }
-            let path_text = path.to_string_lossy();
-            if path_text.to_lowercase().ends_with(".zip")
-                && let Some(entries) = self.archives.get(&path_text)
-            {
-                for entry in entries {
-                    let is_package = entry.path.to_lowercase().ends_with(".unitypackage") && !is_junk(&entry.path);
-                    let covered = unpacked.get(&blob.id).is_some_and(|members| members.contains(entry.path.as_str()));
-                    if is_package && !covered && !scanned(blob.id, &entry.path) {
-                        packages.push(Task::Package {
-                            member: Some(entry.path.clone()),
-                            bytes: entry.size,
-                        });
-                    }
-                }
-            }
-            if blob.fingerprint.is_none() && packages.is_empty() {
+            if blob.fingerprint.is_none() {
                 work.push(Work {
                     blob_id: blob.id,
                     path: path.clone(),
@@ -164,13 +125,64 @@ impl Library {
                     task: Task::Crc { expected: crc },
                 });
             }
-            for task in packages {
+        }
+        work.sort_by(|a, b| a.path.cmp(&b.path));
+        work
+    }
+
+    pub fn pending_packages(&self) -> Vec<Work> {
+        let catalog = &self.snapshot.catalog;
+        let present = self.present_paths();
+        let scanned = |blob: BlobId, member: &str| {
+            self.package_key(blob, member)
+                .is_some_and(|key| self.packages.contains_key(&key))
+        };
+        let mut unpacked: HashMap<BlobId, HashSet<&str>> = HashMap::new();
+        for file in &catalog.files {
+            if let (Some(archive), Some(member)) = (file.extracted_from_blob_id, &file.extracted_from_path) {
+                unpacked.entry(archive).or_default().insert(member);
+            }
+        }
+        let mut work = Vec::new();
+        for blob in &catalog.blobs {
+            let (Some(path), Some(fingerprint)) = (present.get(&blob.id), &blob.fingerprint) else {
+                continue;
+            };
+            let size = u64::try_from(blob.size).unwrap_or(0);
+            let mut package = |member: Option<String>, bytes: u64| {
                 work.push(Work {
                     blob_id: blob.id,
                     path: path.clone(),
                     size,
-                    task,
+                    task: Task::Package {
+                        member,
+                        bytes,
+                        fingerprint: fingerprint.clone(),
+                    },
                 });
+            };
+            if FileKind::from(blob.kind) == FileKind::UnityPackage {
+                let copy_of = catalog
+                    .files
+                    .iter()
+                    .find(|file| file.blob_id == blob.id && file.extracted_from_blob_id.is_some())
+                    .and_then(|file| Some((file.extracted_from_blob_id?, file.extracted_from_path.as_deref()?)));
+                let known = scanned(blob.id, "") || copy_of.is_some_and(|(archive, member)| scanned(archive, member));
+                if !known {
+                    package(None, size);
+                }
+            }
+            let path_text = path.to_string_lossy();
+            if path_text.to_lowercase().ends_with(".zip")
+                && let Some(entries) = self.archives.get(&path_text)
+            {
+                for entry in entries {
+                    let is_package = entry.path.to_lowercase().ends_with(".unitypackage") && !is_junk(&entry.path);
+                    let covered = unpacked.get(&blob.id).is_some_and(|members| members.contains(entry.path.as_str()));
+                    if is_package && !covered && !scanned(blob.id, &entry.path) {
+                        package(Some(entry.path.clone()), entry.size);
+                    }
+                }
             }
         }
         work.sort_by(|a, b| a.path.cmp(&b.path));
@@ -193,8 +205,7 @@ impl Library {
                 let blob_id = outcome.work.blob_id;
                 match (&outcome.result, &outcome.work.task) {
                     (Ok(Done::Fingerprint(fingerprint)), _) => store.set_fingerprint(blob_id, fingerprint)?,
-                    (Ok(Done::Package { fingerprint, assets }), Task::Package { member, .. }) => {
-                        store.set_fingerprint(blob_id, fingerprint)?;
+                    (Ok(Done::Package(assets)), Task::Package { member, fingerprint, .. }) => {
                         packages.push(ScannedPackage {
                             key: PackageKey {
                                 fingerprint: fingerprint.clone(),

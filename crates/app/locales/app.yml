@@ -228,11 +228,17 @@ root.add:
   ja: ライブラリフォルダーを追加
   ko: 라이브러리 폴더 추가
 status.background:
-  en: Background %{done} / %{total}
-  zh-CN: 后台整理 %{done} / %{total}
-  zh-TW: 背景整理 %{done} / %{total}
-  ja: バックグラウンド処理 %{done} / %{total}
-  ko: 백그라운드 처리 %{done} / %{total}
+  en: Organizing files %{done} / %{total}
+  zh-CN: 整理文件 %{done} / %{total}
+  zh-TW: 整理檔案 %{done} / %{total}
+  ja: ファイルを整理中 %{done} / %{total}
+  ko: 파일 정리 중 %{done} / %{total}
+status.packages:
+  en: Reading packages %{done} / %{total}
+  zh-CN: 探查包 %{done} / %{total}
+  zh-TW: 讀取套件 %{done} / %{total}
+  ja: パッケージを読み取り中 %{done} / %{total}
+  ko: 패키지 읽는 중 %{done} / %{total}
 status.paused:
   en: paused
   zh-CN: 已暂停

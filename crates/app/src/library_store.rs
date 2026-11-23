@@ -10,15 +10,24 @@ use snowcase_core::ingest::names::CodePage;
 use snowcase_core::ingest::scan::read_root;
 use snowcase_booth as booth;
 use snowcase_core::ItemId;
-use snowcase_core::library::{Library, Outcome, Picture, ScanReport, StorePage, run};
+use snowcase_core::library::{Library, Outcome, Picture, ScanReport, StorePage, Work, run};
 use snowcase_core::snapshot::Snapshot;
 
 type Job = Box<dyn FnOnce(&mut Library) + Send>;
 
 const BATCH: usize = 32;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Stage {
+    #[default]
+    Files,
+    Packages,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Progress {
+    pub stage: Stage,
+    pub since: Option<(Instant, u64)>,
     pub done: usize,
     pub total: usize,
     pub bytes_done: u64,
@@ -212,7 +221,7 @@ impl LibraryStore {
             self.background.again = true;
             return;
         }
-        let listed = self.change(cx, |library| Ok(library.pending_work()));
+        let listed = self.change(cx, |library| Ok(library.pending_files()));
         self.background = Background {
             progress: Progress {
                 running: true,
@@ -222,62 +231,14 @@ impl LibraryStore {
         };
         cx.notify();
         let task = cx.spawn(async move |this, cx| {
-            let work = listed.await.unwrap_or_default();
-            this.update(cx, |this, cx| {
-                let progress = &mut this.background.progress;
-                progress.total = work.len();
-                progress.bytes_total = work.iter().map(|item| item.bytes()).sum();
-                cx.notify();
-            })
-            .ok();
-            let mut batch: Vec<Outcome> = Vec::new();
-            for item in work {
-                loop {
-                    let step = this
-                        .update(cx, |this, _| {
-                            let background = &mut this.background;
-                            if background.cancelled {
-                                Step::Stop
-                            } else if background.progress.paused {
-                                let (wake, waiting) = oneshot::channel();
-                                background.wake = Some(wake);
-                                Step::Wait(waiting)
-                            } else {
-                                Step::Go
-                            }
-                        })
-                        .unwrap_or(Step::Stop);
-                    match step {
-                        Step::Go => break,
-                        Step::Wait(waiting) => {
-                            flush(&this, cx, &mut batch).await;
-                            waiting.await.ok();
-                        }
-                        Step::Stop => {
-                            flush(&this, cx, &mut batch).await;
-                            finish(&this, cx);
-                            return;
-                        }
-                    }
-                }
-                let bytes = item.bytes();
-                let outcome = cx.background_spawn(async move { run(item) }).await;
-                this.update(cx, |this, cx| {
-                    let progress = &mut this.background.progress;
-                    progress.done += 1;
-                    progress.bytes_done += bytes;
-                    if let Err(error) = &outcome.result {
-                        progress.failures.push((outcome.work.path.to_string_lossy().into_owned(), error.clone()));
-                    }
-                    cx.notify();
-                })
-                .ok();
-                batch.push(outcome);
-                if batch.len() >= BATCH {
-                    flush(&this, cx, &mut batch).await;
+            let files = listed.await.unwrap_or_default();
+            if run_stage(&this, cx, Stage::Files, files).await {
+                let listed = this.update(cx, |this, cx| this.change(cx, |library| Ok(library.pending_packages())));
+                if let Ok(listed) = listed {
+                    let packages = listed.await.unwrap_or_default();
+                    run_stage(&this, cx, Stage::Packages, packages).await;
                 }
             }
-            flush(&this, cx, &mut batch).await;
             finish(&this, cx);
         });
         self.background.task = Some(task);
@@ -291,7 +252,11 @@ impl LibraryStore {
     }
 
     pub fn resume_background(&mut self, cx: &mut Context<Self>) {
-        self.background.progress.paused = false;
+        let progress = &mut self.background.progress;
+        if progress.paused {
+            progress.since = Some((cx.background_executor().now(), progress.bytes_done));
+        }
+        progress.paused = false;
         if let Some(wake) = self.background.wake.take() {
             wake.send(()).ok();
         }
@@ -351,6 +316,68 @@ impl LibraryStore {
             .flatten()
         })
     }
+}
+
+async fn run_stage(this: &WeakEntity<LibraryStore>, cx: &mut AsyncApp, stage: Stage, work: Vec<Work>) -> bool {
+    this.update(cx, |this, cx| {
+        let progress = &mut this.background.progress;
+        progress.stage = stage;
+        progress.since = Some((cx.background_executor().now(), 0));
+        progress.done = 0;
+        progress.total = work.len();
+        progress.bytes_done = 0;
+        progress.bytes_total = work.iter().map(|item| item.bytes()).sum();
+        cx.notify();
+    })
+    .ok();
+    let mut batch: Vec<Outcome> = Vec::new();
+    for item in work {
+        loop {
+            let step = this
+                .update(cx, |this, _| {
+                    let background = &mut this.background;
+                    if background.cancelled || (stage == Stage::Packages && background.again) {
+                        Step::Stop
+                    } else if background.progress.paused {
+                        let (wake, waiting) = oneshot::channel();
+                        background.wake = Some(wake);
+                        Step::Wait(waiting)
+                    } else {
+                        Step::Go
+                    }
+                })
+                .unwrap_or(Step::Stop);
+            match step {
+                Step::Go => break,
+                Step::Wait(waiting) => {
+                    flush(this, cx, &mut batch).await;
+                    waiting.await.ok();
+                }
+                Step::Stop => {
+                    flush(this, cx, &mut batch).await;
+                    return false;
+                }
+            }
+        }
+        let bytes = item.bytes();
+        let outcome = cx.background_spawn(async move { run(item) }).await;
+        this.update(cx, |this, cx| {
+            let progress = &mut this.background.progress;
+            progress.done += 1;
+            progress.bytes_done += bytes;
+            if let Err(error) = &outcome.result {
+                progress.failures.push((outcome.work.path.to_string_lossy().into_owned(), error.clone()));
+            }
+            cx.notify();
+        })
+        .ok();
+        batch.push(outcome);
+        if batch.len() >= BATCH {
+            flush(this, cx, &mut batch).await;
+        }
+    }
+    flush(this, cx, &mut batch).await;
+    true
 }
 
 async fn flush(this: &WeakEntity<LibraryStore>, cx: &mut AsyncApp, batch: &mut Vec<Outcome>) {

@@ -4,8 +4,9 @@ use gpui_kit::component::*;
 use gpui_kit::*;
 
 use crate::i18n::{self, tr};
-use crate::library_store::LibraryStore;
+use crate::library_store::{LibraryStore, Stage};
 use crate::library_view::*;
+use crate::library_view::widgets::format_size;
 
 pub(crate) const UNSUPPORTED_LISTED: usize = 20;
 
@@ -30,7 +31,23 @@ impl LibraryView {
                 .tooltip(listed.join("\n"))
         });
         let background = progress.running.then(|| {
-            let mut label = tr!(cx, "status.background", done = progress.done, total = progress.total).to_string();
+            let mut label = match progress.stage {
+                Stage::Files => tr!(cx, "status.background", done = progress.done, total = progress.total).to_string(),
+                Stage::Packages => {
+                    let size = |bytes: u64| format_size(i64::try_from(bytes).unwrap_or(i64::MAX));
+                    let mut label =
+                        tr!(cx, "status.packages", done = size(progress.bytes_done), total = size(progress.bytes_total))
+                            .to_string();
+                    let speed = progress.since.filter(|_| !progress.paused).and_then(|(since, bytes)| {
+                        let seconds = cx.background_executor().now().duration_since(since).as_secs_f64();
+                        (seconds >= 1.).then(|| (progress.bytes_done.saturating_sub(bytes) as f64 / seconds) as u64)
+                    });
+                    if let Some(speed) = speed {
+                        label.push_str(&format!(" · {}/s", size(speed)));
+                    }
+                    label
+                }
+            };
             if progress.paused {
                 label.push_str(" · ");
                 label.push_str(&tr!(cx, "status.paused"));

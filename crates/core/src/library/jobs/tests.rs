@@ -40,16 +40,23 @@ fn scanned(copy: &[u8]) -> (tempfile::TempDir, tempfile::TempDir, Library) {
 
 fn tasks(library: &Library) -> Vec<(String, Task)> {
     library
-        .pending_work()
+        .pending_files()
         .into_iter()
+        .chain(library.pending_packages())
         .map(|work| (work.path.file_name().unwrap().to_string_lossy().into_owned(), work.task))
         .collect()
 }
 
 fn run_all(library: &mut Library) -> Vec<Outcome> {
-    let outcomes: Vec<Outcome> = library.pending_work().into_iter().map(run).collect();
-    library.apply_work(&outcomes).unwrap();
-    outcomes
+    let files: Vec<Outcome> = library.pending_files().into_iter().map(run).collect();
+    library.apply_work(&files).unwrap();
+    let packages: Vec<Outcome> = library.pending_packages().into_iter().map(run).collect();
+    library.apply_work(&packages).unwrap();
+    files.into_iter().chain(packages).collect()
+}
+
+fn idle(library: &Library) -> bool {
+    library.pending_files().is_empty() && library.pending_packages().is_empty()
 }
 
 fn copy_is_extracted(library: &Library) -> bool {
@@ -70,10 +77,33 @@ fn a_scan_leaves_fingerprints_for_every_file_and_a_crc_for_each_extracted_copy()
     assert_eq!(
         found,
         [
+            ("Outfit.unitypackage".into(), Task::Fingerprint),
             ("Outfit.unitypackage".into(), Task::Crc { expected: crc32fast::hash(PACKAGE) }),
-            ("Outfit.unitypackage".into(), Task::Package { member: None, bytes: PACKAGE.len() as u64 }),
             ("Outfit.zip".into(), Task::Fingerprint),
         ]
+    );
+    assert!(library.pending_packages().is_empty(), "packages wait for their fingerprints");
+}
+
+#[test]
+fn packages_are_read_after_the_files_and_reuse_their_fingerprints() {
+    let (_data, _assets, mut library) = scanned(PACKAGE);
+
+    let files: Vec<Outcome> = library.pending_files().into_iter().map(run).collect();
+    library.apply_work(&files).unwrap();
+
+    let fingerprint = |name: &str| {
+        let item = library.items()[0].id;
+        let view = library.files(item).into_iter().find(|view| view.file.file_name == name).unwrap();
+        view.blob.fingerprint.clone().unwrap()
+    };
+    assert!(library.pending_files().is_empty());
+    assert_eq!(
+        tasks(&library),
+        [(
+            "Outfit.unitypackage".into(),
+            Task::Package { member: None, bytes: PACKAGE.len() as u64, fingerprint: fingerprint("Outfit.unitypackage") },
+        )]
     );
 }
 
@@ -84,7 +114,7 @@ fn applied_results_are_kept_so_nothing_is_left_to_do_even_after_reopening() {
     let outcomes = run_all(&mut library);
 
     assert!(outcomes.iter().all(|outcome| outcome.result.is_ok()));
-    assert!(library.pending_work().is_empty());
+    assert!(idle(&library));
     assert!(copy_is_extracted(&library));
     let reopened = Library::open(data.path()).unwrap();
     assert!(reopened.snapshot.catalog.blobs.iter().all(|blob| blob.fingerprint.is_some()));
@@ -96,16 +126,15 @@ fn a_copy_whose_crc_differs_is_no_longer_treated_as_extracted() {
     let (_data, _assets, mut library) = scanned(b"PACKAGE BYTES");
     assert!(copy_is_extracted(&library));
 
-    run_all(&mut library);
+    let outcomes = run_all(&mut library);
 
     assert!(!copy_is_extracted(&library));
-    let member = Task::Package {
-        member: Some("Outfit/Outfit.unitypackage".into()),
-        bytes: PACKAGE.len() as u64,
-    };
-    assert_eq!(tasks(&library), [("Outfit.zip".into(), member)], "the zip's own package is read instead");
-    run_all(&mut library);
-    assert!(library.pending_work().is_empty());
+    let zipped = outcomes.iter().any(|outcome| {
+        outcome.work.path.ends_with("Outfit.zip")
+            && matches!(&outcome.work.task, Task::Package { member: Some(member), .. } if member == "Outfit/Outfit.unitypackage")
+    });
+    assert!(zipped, "the zip's own package is read instead");
+    assert!(idle(&library));
 }
 
 #[test]
@@ -181,12 +210,12 @@ fn packages_are_read_once_whether_loose_zipped_or_extracted_and_survive_reopenin
         ("Ring/Ring.unitypackage".to_owned(), 1, Some("Assets/Shop/Ring".to_owned())),
     ];
     assert_eq!(summaries(&library), expected);
-    assert!(library.pending_work().is_empty());
+    assert!(idle(&library));
     drop(library);
     let mut reopened = Library::open(data.path()).unwrap();
     reopened.scan_root(assets.path(), CodePage::Other).unwrap();
     assert_eq!(summaries(&reopened), expected);
-    assert!(reopened.pending_work().is_empty());
+    assert!(idle(&reopened));
 }
 
 #[test]
@@ -198,7 +227,7 @@ fn a_broken_package_is_remembered_as_failed_and_not_read_again() {
     let item = library.items()[0].id;
     let copy = library.files(item).into_iter().find(|view| view.file.file_name == "Outfit.unitypackage").unwrap();
     assert!(library.package_of(copy.file).unwrap().error.is_some());
-    assert!(library.pending_work().is_empty());
+    assert!(idle(&library));
 }
 
 fn shop_of_only_item(library: &Library) -> Vec<String> {
