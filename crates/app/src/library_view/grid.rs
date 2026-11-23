@@ -1,6 +1,7 @@
 use std::rc::Rc;
 
 use gpui_kit::component::button::*;
+use gpui_kit::component::scroll::Scrollbar;
 use gpui_kit::component::*;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -107,8 +108,10 @@ impl LibraryView {
                         })
                         .collect()
                 })
+                .track_scroll(&self.grid_scroll)
                 .size_full(),
             )
+            .child(Scrollbar::vertical(&self.grid_scroll))
             .into_any_element()
     }
 

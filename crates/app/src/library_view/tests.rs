@@ -3,7 +3,7 @@ use snowcase_core::FacetKey;
 use snowcase_core::library::Library;
 use snowcase_core::snapshot::{Filter, Scope, SortKey, item_node};
 use snowcase_testing::fixtures::{self, Fixture};
-use snowcase_testing::ui::{activate, choose, clear, click, count, drop_paths, exists, open, press, type_into};
+use snowcase_testing::ui::{activate, choose, clear, click, count, drop_paths, exists, open, press, scroll_down, type_into};
 
 use super::LibraryView;
 use crate::i18n;
@@ -419,4 +419,16 @@ fn a_linked_item_shows_its_booth_page_shop_and_cover(cx: &mut TestAppContext) {
         assert_eq!(library.shops(), [("Sample Shop".to_owned(), 1)]);
         assert!(library.cover_path(id).is_some());
     });
+}
+
+#[gpui_kit::test]
+fn scrolling_the_grid_moves_past_the_first_rows(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::library(7, 300);
+    let (window, _) = open_library(library, cx);
+
+    assert!(exists(window, ("asset", 0usize), cx));
+    scroll_down(window, ("asset", 0usize), 3000., cx);
+
+    assert!(!exists(window, ("asset", 0usize), cx));
+    assert!((60usize..300).any(|ix| exists(window, ("asset", ix), cx)));
 }

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use gpui_kit::{
     AnyWindowHandle, App, AppContext, Bounds, ElementId, Entity, ExternalPaths, FileDropEvent,
-    Point, Render, TestAppContext, VisualTestContext, Window, WindowBounds, WindowOptions, point,
+    Point, Render, ScrollDelta, TestAppContext, VisualTestContext, Window, WindowBounds, WindowOptions, point,
     px, size,
 };
 
@@ -66,6 +66,20 @@ pub fn double_click(window: AnyWindowHandle, id: impl Into<ElementId>, cx: &mut 
     settle(window, cx);
     let id = id.into();
     cx.update_window(window, |_, window, cx| window.double_click(id, cx))
+        .unwrap();
+    settle(window, cx);
+}
+
+pub fn scroll_down(
+    window: AnyWindowHandle,
+    id: impl Into<ElementId>,
+    distance: f32,
+    cx: &mut TestAppContext,
+) {
+    settle(window, cx);
+    let id = id.into();
+    let delta = ScrollDelta::Pixels(point(px(0.), px(-distance)));
+    cx.update_window(window, |_, window, cx| window.scroll(id, delta, cx))
         .unwrap();
     settle(window, cx);
 }
