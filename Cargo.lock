@@ -7778,8 +7778,8 @@ checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
 
 [[package]]
 name = "unipeek"
-version = "0.1.0-alpha.1"
-source = "git+https://github.com/vivi-shiki/unipeek?tag=v0.1.0-alpha.1#cebae0ad00a6f7bccdbeed9e9aab303ff4ea3b6c"
+version = "0.1.0-alpha.2"
+source = "git+https://github.com/vivi-shiki/unipeek?tag=v0.1.0-alpha.2#a7f0d8dc15d999694039b4fbf0bdd7fa69c3acf3"
 dependencies = [
  "bytemuck",
  "glam",
@@ -7795,8 +7795,8 @@ dependencies = [
 
 [[package]]
 name = "unipeek-unity"
-version = "0.1.0-alpha.1"
-source = "git+https://github.com/vivi-shiki/unipeek?tag=v0.1.0-alpha.1#cebae0ad00a6f7bccdbeed9e9aab303ff4ea3b6c"
+version = "0.1.0-alpha.2"
+source = "git+https://github.com/vivi-shiki/unipeek?tag=v0.1.0-alpha.2#a7f0d8dc15d999694039b4fbf0bdd7fa69c3acf3"
 dependencies = [
  "encoding_rs",
  "flate2",
