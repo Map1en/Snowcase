@@ -2288,6 +2288,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.30.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "19fc433e8437a212d1b6f1e68c7824af3aed907da60afa994e7f542d18d12aa9"
+
+[[package]]
 name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6864,6 +6870,7 @@ dependencies = [
  "snowcase-testing",
  "sys-locale",
  "tempfile",
+ "unipeek",
 ]
 
 [[package]]
@@ -7674,6 +7681,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ufbx"
+version = "0.11.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "260522f1eb74139f0e78b29dd82a58e5437d728c5498024a39e5af7282694240"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7759,6 +7775,36 @@ name = "unicode-width"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
+
+[[package]]
+name = "unipeek"
+version = "0.1.0-alpha.1"
+source = "git+https://github.com/vivi-shiki/unipeek?tag=v0.1.0-alpha.1#cebae0ad00a6f7bccdbeed9e9aab303ff4ea3b6c"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "image",
+ "pollster 0.4.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "ufbx",
+ "unipeek-unity",
+ "wgpu",
+]
+
+[[package]]
+name = "unipeek-unity"
+version = "0.1.0-alpha.1"
+source = "git+https://github.com/vivi-shiki/unipeek?tag=v0.1.0-alpha.1#cebae0ad00a6f7bccdbeed9e9aab303ff4ea3b6c"
+dependencies = [
+ "encoding_rs",
+ "flate2",
+ "serde",
+ "tar",
+ "thiserror 2.0.21",
+ "zip",
+]
 
 [[package]]
 name = "untrusted"
