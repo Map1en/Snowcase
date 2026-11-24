@@ -37,8 +37,8 @@ crc32fast = "1.5"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = "3"
-# Rendering library; git tag until it is published on crates.io.
-unipeek = { git = "https://github.com/vivi-shiki/unipeek", tag = "v0.1.0-alpha.2", default-features = false }
+# Rendering library. Pinned exactly: pre-release versions may break the API.
+unipeek = { version = "=0.1.0-alpha.2", default-features = false }
 
 [profile.dev.package.miniz_oxide]
 opt-level = 3

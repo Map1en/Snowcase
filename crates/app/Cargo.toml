@@ -17,4 +17,5 @@ unipeek = { workspace = true }
 [dev-dependencies]
 gpui-kit = { workspace = true, features = ["test-support"] }
 snowcase-testing = { workspace = true }
+serde_json = { workspace = true }
 tempfile = { workspace = true }

@@ -6865,6 +6865,7 @@ dependencies = [
  "futures",
  "gpui-kit",
  "rust-i18n",
+ "serde_json",
  "snowcase-booth",
  "snowcase-core",
  "snowcase-testing",
@@ -7779,7 +7780,8 @@ checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
 [[package]]
 name = "unipeek"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/vivi-shiki/unipeek?tag=v0.1.0-alpha.2#a7f0d8dc15d999694039b4fbf0bdd7fa69c3acf3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fbca9976fffcdd6519cc784fa810f1baccddcab2f6088c345181fcc6c589b32"
 dependencies = [
  "bytemuck",
  "glam",
@@ -7796,7 +7798,8 @@ dependencies = [
 [[package]]
 name = "unipeek-unity"
 version = "0.1.0-alpha.2"
-source = "git+https://github.com/vivi-shiki/unipeek?tag=v0.1.0-alpha.2#a7f0d8dc15d999694039b4fbf0bdd7fa69c3acf3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ce686f6d38c3bd9d86855909c02f1d7b2e058c4fe4ea82a118b47645ddfe54e"
 dependencies = [
  "encoding_rs",
  "flate2",
