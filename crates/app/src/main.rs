@@ -6,6 +6,7 @@ mod i18n;
 mod library_store;
 mod library_view;
 mod shell;
+mod utils;
 
 use gpui_kit::*;
 
@@ -23,11 +24,19 @@ fn main() {
             .unwrap_or_else(std::env::temp_dir)
             .join("Snowcase")
     };
+    let prefs_path = (!smoke).then(|| {
+        std::env::var_os("LOCALAPPDATA")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join("Snowcase")
+            .join("prefs.json")
+    });
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
         .run(move |cx| {
             gpui_kit::init(cx);
             i18n::set_locale(i18n::system_locale(), cx);
+            utils::prefs::init(prefs_path, cx);
             cx.on_window_closed(|cx, _| {
                 if cx.windows().is_empty() {
                     cx.quit();

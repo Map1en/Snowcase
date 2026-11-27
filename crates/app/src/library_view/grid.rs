@@ -23,11 +23,25 @@ pub(crate) const GRID_PADDING: f32 = 16.;
 
 pub(crate) const ROW_HEIGHT: f32 = 36.;
 
+pub(crate) const MIN_COLUMN_WIDTH: f32 = 48.;
+
+pub(crate) const COLUMN_SORTS: [SortKey; 6] =
+    [SortKey::Name, SortKey::Shop, SortKey::Version, SortKey::Kind, SortKey::Size, SortKey::Booth];
+
+#[derive(Clone)]
+pub(crate) struct ResizeColumn(usize);
+
+impl Render for ResizeColumn {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        Empty
+    }
+}
+
 impl LibraryView {
     pub(crate) fn render_results_bar(&self, total: usize, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
         let sort = self.sort;
-        let descending = matches!(sort, SortKey::Added | SortKey::Size) != self.reversed;
+        let descending = self.descending();
         h_flex()
             .gap_2()
             .items_center()
@@ -65,6 +79,7 @@ impl LibraryView {
                             _ => SortKey::Added,
                         };
                         this.reversed = false;
+                        this.save_view(cx);
                         this.refresh(cx);
                     })),
             )
@@ -76,6 +91,7 @@ impl LibraryView {
                     .tooltip(tr!(cx, "sort.direction"))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.reversed = !this.reversed;
+                        this.save_view(cx);
                         this.refresh(cx);
                     })),
             )
@@ -95,6 +111,7 @@ impl LibraryView {
                     ])
                     .on_click(cx.listener(|this, selected: &Vec<usize>, _, cx| {
                         this.list_view = selected.first() == Some(&1);
+                        this.save_view(cx);
                         cx.notify();
                     })),
             )
@@ -227,9 +244,61 @@ impl LibraryView {
             .into_any_element()
     }
 
+    pub(crate) fn descending(&self) -> bool {
+        matches!(self.sort, SortKey::Added | SortKey::Size) != self.reversed
+    }
+
+    pub(crate) fn sort_by_column(&mut self, sort: SortKey, cx: &mut Context<Self>) {
+        if self.sort == sort {
+            self.reversed = !self.reversed;
+        } else {
+            self.sort = sort;
+            self.reversed = false;
+        }
+        self.save_view(cx);
+        self.refresh(cx);
+    }
+
     pub(crate) fn render_list(&self, cx: &Context<Self>) -> AnyElement {
         let theme = cx.theme();
         let sizes = Rc::new(vec![size(px(0.), px(ROW_HEIGHT)); self.rows.len()]);
+        let labels: [SharedString; 6] = [
+            tr!(cx, "item.name"),
+            tr!(cx, "filter.shop"),
+            tr!(cx, "facet.version"),
+            tr!(cx, "item.type"),
+            tr!(cx, "item.size"),
+            "BOOTH".into(),
+        ];
+        let cells: Vec<AnyElement> = labels
+            .into_iter()
+            .enumerate()
+            .map(|(ix, label)| {
+                let sort = COLUMN_SORTS[ix];
+                let active = self.sort == sort;
+                let arrow = active.then(|| {
+                    Icon::new(if self.descending() { IconName::SortDescending } else { IconName::SortAscending })
+                        .size(px(12.))
+                        .flex_shrink_0()
+                });
+                h_flex()
+                    .id(("column", ix))
+                    .test_support()
+                    .relative()
+                    .w_full()
+                    .h_full()
+                    .gap_1()
+                    .items_center()
+                    .cursor_pointer()
+                    .hover(|this| this.text_color(theme.foreground))
+                    .when(active, |this| this.text_color(theme.foreground))
+                    .child(div().min_w_0().truncate().child(label))
+                    .children(arrow)
+                    .on_click(cx.listener(move |this, _, _, cx| this.sort_by_column(sort, cx)))
+                    .when(ix < 5, |this| this.child(self.render_resize_handle(ix, cx)))
+                    .into_any_element()
+            })
+            .collect();
         let header = list_columns(
             h_flex()
                 .h(px(ROW_HEIGHT - 8.))
@@ -238,14 +307,9 @@ impl LibraryView {
                 .text_color(theme.muted_foreground)
                 .border_b_1()
                 .border_color(theme.border),
-            [
-                tr!(cx, "item.name"),
-                tr!(cx, "filter.shop"),
-                tr!(cx, "facet.version"),
-                tr!(cx, "item.type"),
-                tr!(cx, "item.size"),
-                "BOOTH".into(),
-            ],
+            cells,
+            self.widths,
+            false,
         );
         v_flex()
             .flex_1()
@@ -271,6 +335,55 @@ impl LibraryView {
                     .child(Scrollbar::vertical(&self.grid_scroll)),
             )
             .into_any_element()
+    }
+
+    pub(crate) fn render_resize_handle(&self, boundary: usize, cx: &Context<Self>) -> impl IntoElement + use<> {
+        let theme = cx.theme();
+        let (column, sign) = if boundary == 0 { (0, -1.) } else { (boundary - 1, 1.) };
+        let group = SharedString::from(format!("resize-column-{boundary}"));
+        h_flex()
+            .id(("resize-column", boundary))
+            .test_support()
+            .group(group.clone())
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .right(px(-12.))
+            .w(px(12.))
+            .justify_center()
+            .occlude()
+            .cursor_col_resize()
+            .child(div().w(px(1.)).h_full().bg(theme.border).group_hover(group, |this| this.bg(theme.primary)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, event: &MouseDownEvent, _, _| {
+                    this.resize_origin = Some((event.position.x, this.widths[column]));
+                }),
+            )
+            .on_click(|_, _, cx| cx.stop_propagation())
+            .on_drag(ResizeColumn(boundary), |drag, _, _, cx| {
+                cx.stop_propagation();
+                cx.new(|_| drag.clone())
+            })
+            .on_drag_move(cx.listener(move |this, event: &DragMoveEvent<ResizeColumn>, _, cx| {
+                if event.drag(cx).0 != boundary {
+                    return;
+                }
+                let Some((x, width)) = this.resize_origin else {
+                    return;
+                };
+                let moved = f32::from(event.event.position.x - x);
+                this.widths[column] = (width + sign * moved).max(MIN_COLUMN_WIDTH);
+                cx.notify();
+            }))
+            .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, cx| this.end_resize(cx)))
+            .on_mouse_up_out(MouseButton::Left, cx.listener(|this, _, _, cx| this.end_resize(cx)))
+    }
+
+    pub(crate) fn end_resize(&mut self, cx: &mut Context<Self>) {
+        if self.resize_origin.take().is_some() {
+            self.save_view(cx);
+        }
     }
 
     pub(crate) fn render_row(&self, ix: usize, library: &Snapshot, cx: &Context<Self>) -> AnyElement {
@@ -303,11 +416,11 @@ impl LibraryView {
                     .child(initials(&item.title).chars().next().map(String::from).unwrap_or_default()),
             )
             .child(div().truncate().child(item.title.clone()));
-        let cells: [AnyElement; 6] = [
+        let cells = [
             name.into_any_element(),
             shop.map_or_else(dash, SharedString::from).into_any_element(),
             version.map_or_else(dash, |version| format!("v{version}").into()).into_any_element(),
-            main_extension(library, id).map_or_else(dash, SharedString::from).into_any_element(),
+            library.main_extension(id).map_or_else(dash, SharedString::from).into_any_element(),
             format_size(size).into_any_element(),
             if library.booth_page(id).is_some() {
                 SharedString::from("✓").into_any_element()
@@ -328,6 +441,8 @@ impl LibraryView {
                 .when(!selected, |this| this.hover(|this| this.bg(theme.list_hover)))
                 .on_click(cx.listener(move |this, _, window, cx| this.select(Some(id), window, cx))),
             cells,
+            self.widths,
+            true,
         )
         .into_any_element()
     }
@@ -362,13 +477,17 @@ pub(crate) fn card_meta(library: &Snapshot, id: ItemId) -> String {
     shop.into_iter().chain([size]).collect::<Vec<_>>().join(" · ")
 }
 
-pub(crate) fn list_columns<E: ParentElement + Styled>(row: E, cells: [impl IntoElement; 6]) -> E {
-    let widths = [None, Some(140.), Some(70.), Some(110.), Some(80.), Some(110.)];
+pub(crate) fn list_columns<E: ParentElement + Styled>(
+    row: E,
+    cells: impl IntoIterator<Item = AnyElement>,
+    widths: [f32; 5],
+    clip: bool,
+) -> E {
     let mut row = row.w_full().px(px(GRID_PADDING)).gap_3().items_center();
-    for (cell, width) in cells.into_iter().zip(widths) {
-        let column = div().min_w_0().truncate().child(cell);
-        row = row.child(match width {
-            Some(width) => column.w(px(width)),
+    for (ix, cell) in cells.into_iter().enumerate() {
+        let column = div().min_w_0().when(clip, |this| this.truncate()).child(cell);
+        row = row.child(match ix.checked_sub(1).and_then(|ix| widths.get(ix)) {
+            Some(width) => column.w(px(*width)),
             None => column.flex_1().min_w(px(160.)),
         });
     }

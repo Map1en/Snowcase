@@ -48,12 +48,16 @@ pub enum Hit {
     Attribute(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum SortKey {
     #[default]
     Added,
     Name,
+    Shop,
+    Version,
+    Kind,
     Size,
+    Booth,
 }
 
 impl Snapshot {
@@ -70,6 +74,20 @@ impl Snapshot {
             SortKey::Name => found.sort_by_key(|item| (item.title.to_lowercase(), item.id)),
             SortKey::Size => found.sort_by_key(|item| {
                 std::cmp::Reverse((self.facts.get(&item.id).map_or(0, |facts| facts.size), item.id))
+            }),
+            SortKey::Shop => found.sort_by_cached_key(|item| {
+                let shop = self.facts.get(&item.id).and_then(|facts| facts.shop.as_deref());
+                (missing_last(shop), item.title.to_lowercase(), item.id)
+            }),
+            SortKey::Version => found.sort_by_cached_key(|item| {
+                let version = self.facts.get(&item.id).and_then(|facts| facts.attribute(FacetKey::Version));
+                (missing_last(version), item.title.to_lowercase(), item.id)
+            }),
+            SortKey::Kind => found.sort_by_cached_key(|item| {
+                (missing_last(self.main_extension(item.id).as_deref()), item.title.to_lowercase(), item.id)
+            }),
+            SortKey::Booth => found.sort_by_cached_key(|item| {
+                (self.booth_page(item.id).is_some(), item.title.to_lowercase(), item.id)
             }),
         }
         found
@@ -175,6 +193,11 @@ impl Snapshot {
             .max_by_key(|file| (file.extracted_from_blob_id.is_none(), size(file), std::cmp::Reverse(file.blob_id)))
     }
 
+    pub fn main_extension(&self, id: ItemId) -> Option<String> {
+        let name = shown_name(self.main_file(id)?);
+        name.rsplit_once('.').map(|(_, extension)| extension.to_uppercase())
+    }
+
     pub fn suggest_tags(&self, draft: &str) -> Vec<(&Tag, usize)> {
         let key = tag_key(draft);
         let mut tags: Vec<(&Tag, usize)> = self
@@ -203,4 +226,8 @@ impl Snapshot {
     pub fn shops(&self) -> Vec<(String, usize)> {
         tally(self.facts.values().filter_map(|facts| facts.shop.clone()))
     }
+}
+
+fn missing_last(value: Option<&str>) -> (bool, String) {
+    (value.is_none(), value.unwrap_or_default().to_lowercase())
 }

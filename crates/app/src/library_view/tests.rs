@@ -3,11 +3,12 @@ use snowcase_core::FacetKey;
 use snowcase_core::library::Library;
 use snowcase_core::snapshot::{Filter, Scope, SortKey, item_node};
 use snowcase_testing::fixtures::{self, Fixture};
-use snowcase_testing::ui::{activate, choose, clear, click, count, drop_paths, exists, open, press, scroll_down, type_into};
+use snowcase_testing::ui::{activate, choose, clear, click, count, drag_by, drop_paths, exists, open, press, scroll_down, type_into, width};
 
 use super::LibraryView;
 use crate::i18n;
 use crate::library_store::LibraryStore;
+use crate::utils::prefs;
 
 fn open_library(
     library: Library,
@@ -478,4 +479,41 @@ fn unlinked_items_are_marked_and_have_their_own_view(cx: &mut TestAppContext) {
     read(&view, cx, |view, _| assert!(!view.rows.contains(&id)));
     click(window, ("asset", 0usize), cx);
     assert!(exists(window, "booth-input", cx), "an unlinked item offers the link right in the header");
+}
+
+#[gpui_kit::test]
+fn list_columns_sort_and_resize_and_the_layout_is_remembered(cx: &mut TestAppContext) {
+    let prefs_dir = tempfile::tempdir().unwrap();
+    let path = prefs_dir.path().join("prefs.json");
+    cx.update(|cx| prefs::init(Some(path.clone()), cx));
+    let Fixture { library, dir: _dir } = fixtures::library(3, 20);
+    let (window, view) = open_library(library, cx);
+    let sizes = |view: &LibraryView, library: &snowcase_core::snapshot::Snapshot| -> Vec<i64> {
+        view.rows.iter().map(|id| library.facts(*id).map_or(0, |facts| facts.size)).collect()
+    };
+
+    click(window, "view-list", cx);
+    click(window, ("column", 4usize), cx);
+    read(&view, cx, |view, library| assert!(sizes(view, library).is_sorted_by(|a, b| a >= b)));
+    click(window, ("column", 4usize), cx);
+    read(&view, cx, |view, library| assert!(sizes(view, library).is_sorted()));
+
+    let shop = width(window, ("column", 1usize), cx);
+    drag_by(window, ("resize-column", 1usize), 40., cx);
+    let resized = width(window, ("column", 1usize), cx);
+    assert!((resized - shop - 40.).abs() < 1., "{shop} -> {resized}");
+    drag_by(window, ("resize-column", 0usize), 30., cx);
+    assert!((width(window, ("column", 1usize), cx) - resized + 30.).abs() < 1.);
+    let remembered = width(window, ("column", 1usize), cx);
+
+    cx.update(|cx| prefs::init(Some(path.clone()), cx));
+    let Fixture { library: again, dir: _again } = fixtures::library(3, 20);
+    let (window, view) = open_library(again, cx);
+
+    assert!(exists(window, ("column", 0usize), cx), "the list view is remembered");
+    read(&view, cx, |view, library| {
+        assert_eq!((view.sort, view.reversed), (SortKey::Size, true));
+        assert!(sizes(view, library).is_sorted());
+    });
+    assert!((width(window, ("column", 1usize), cx) - remembered).abs() < 1.);
 }

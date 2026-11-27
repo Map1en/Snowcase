@@ -20,10 +20,30 @@ use snowcase_core::{FacetKey, ItemId, StoreError};
 
 use crate::i18n::{Locale, tr};
 use crate::library_store::{LibraryChanged, LibraryStore};
+use crate::utils::prefs;
 
 pub(crate) use detail::{BoothStatus, TreeNode};
 
 pub(crate) const RESCAN_AFTER: Duration = Duration::from_secs(60);
+
+pub(crate) const VIEW_PREFS: &str = "library.view";
+
+pub(crate) const COLUMN_WIDTHS: [f32; 5] = [140., 70., 110., 80., 110.];
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct ViewPrefs {
+    list_view: bool,
+    sort: SortKey,
+    reversed: bool,
+    widths: [f32; 5],
+}
+
+impl Default for ViewPrefs {
+    fn default() -> Self {
+        Self { list_view: false, sort: SortKey::Added, reversed: false, widths: COLUMN_WIDTHS }
+    }
+}
 
 pub(crate) const TAG_SEPARATORS: [char; 3] = [',', '，', '、'];
 
@@ -61,6 +81,8 @@ pub struct LibraryView {
     sort: SortKey,
     reversed: bool,
     list_view: bool,
+    widths: [f32; 5],
+    resize_origin: Option<(Pixels, f32)>,
     nav_open: bool,
     more_filters: bool,
     rows: Vec<ItemId>,
@@ -194,12 +216,15 @@ impl LibraryView {
                 },
             ));
         }
+        let saved: ViewPrefs = prefs::get(VIEW_PREFS, cx).unwrap_or_default();
         let mut view = Self {
             store,
             filter: Filter::default(),
-            sort: SortKey::Added,
-            reversed: false,
-            list_view: false,
+            sort: saved.sort,
+            reversed: saved.reversed,
+            list_view: saved.list_view,
+            widths: saved.widths,
+            resize_origin: None,
             nav_open: true,
             more_filters: false,
             rows: Vec::new(),
@@ -234,6 +259,11 @@ impl LibraryView {
             let placeholder = tr!(cx, key);
             input.update(cx, |input, cx| input.set_placeholder(placeholder, window, cx));
         }
+    }
+
+    pub(crate) fn save_view(&self, cx: &mut App) {
+        let saved = ViewPrefs { list_view: self.list_view, sort: self.sort, reversed: self.reversed, widths: self.widths };
+        prefs::set(VIEW_PREFS, &saved, cx);
     }
 
     pub(crate) fn set_filter(&mut self, field: FilterField, value: Option<String>) {

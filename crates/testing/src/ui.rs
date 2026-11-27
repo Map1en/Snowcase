@@ -138,3 +138,21 @@ pub fn activate(window: AnyWindowHandle, cx: &mut TestAppContext) {
         .unwrap();
     settle(window, cx);
 }
+
+pub fn width(window: AnyWindowHandle, id: impl Into<ElementId>, cx: &mut TestAppContext) -> f32 {
+    settle(window, cx);
+    let id = id.into();
+    cx.update_window(window, |_, window, _| f32::from(window.find(id).bounds().size.width))
+        .unwrap()
+}
+
+pub fn drag_by(window: AnyWindowHandle, id: impl Into<ElementId>, distance: f32, cx: &mut TestAppContext) {
+    settle(window, cx);
+    let id = id.into();
+    cx.update_window(window, |_, window, cx| {
+        let from = window.find(id).bounds().center();
+        window.drag(from, point(from.x + px(distance), from.y), cx);
+    })
+    .unwrap();
+    settle(window, cx);
+}

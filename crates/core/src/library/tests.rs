@@ -226,6 +226,26 @@ fn query_sorts_by_newest_name_or_size() {
         titles(&library.query(&Filter::default(), SortKey::Size)),
         ["Hair", "Gloves", "cover"]
     );
+    assert_eq!(
+        titles(&library.query(&Filter::default(), SortKey::Kind)),
+        ["cover", "Gloves", "Hair"]
+    );
+}
+
+#[test]
+fn query_sorts_items_without_a_shop_or_version_last_and_by_name() {
+    let (_dir, mut library) = sample();
+    let hair = id_of(&library, "Hair");
+    library.set_user_facets(&item_node(hair), FacetKey::Version, &values(&["2"])).unwrap();
+
+    assert_eq!(
+        titles(&library.query(&Filter::default(), SortKey::Version)),
+        ["Hair", "cover", "Gloves"]
+    );
+    assert_eq!(
+        titles(&library.query(&Filter::default(), SortKey::Shop)),
+        ["cover", "Gloves", "Hair"]
+    );
 }
 
 #[test]

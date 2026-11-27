@@ -6964,6 +6964,8 @@ dependencies = [
  "futures",
  "gpui-kit",
  "rust-i18n",
+ "serde",
+ "serde_json",
  "snowcase-booth",
  "snowcase-core",
  "snowcase-testing",
