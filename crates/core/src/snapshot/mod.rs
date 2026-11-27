@@ -9,11 +9,13 @@ use facts::facts_of;
 mod facts;
 mod hints;
 mod index;
+mod licenses;
 mod packages;
 mod query;
 
 pub use facts::ItemFacts;
 pub use hints::Hints;
+pub(crate) use licenses::{Licenses, record};
 pub use packages::PackageSummary;
 pub use query::{Filter, Hit, Scope, SortKey};
 
@@ -75,6 +77,7 @@ pub struct Snapshot {
     pub(crate) catalog: Catalog,
     pub(crate) facts: HashMap<ItemId, ItemFacts>,
     pub(crate) packages: Arc<HashMap<PackageKey, Arc<PackageSummary>>>,
+    pub(crate) licenses: Arc<licenses::Licenses>,
     pub(crate) media_dir: PathBuf,
     index: index::Index,
 }
@@ -86,6 +89,7 @@ impl Snapshot {
             catalog,
             facts,
             packages: Arc::default(),
+            licenses: Arc::default(),
             media_dir: PathBuf::new(),
             index: index::Index::default(),
         }

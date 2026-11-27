@@ -5,7 +5,8 @@ use std::sync::Arc;
 use snowcase_store::{Cache, ItemId, Store, StoreError};
 
 use crate::ingest::scan::ArchiveCache;
-use crate::snapshot::{PackageSummary, Snapshot};
+use crate::ingest::vn3::PARSER_VERSION;
+use crate::snapshot::{Licenses, PackageSummary, Snapshot, record};
 
 mod edit;
 mod jobs;
@@ -36,13 +37,14 @@ impl Library {
         }
         let opened = Cache::open(dir).and_then(|mut cache| {
             let packages = cache.load_packages()?;
-            Ok((cache, packages))
+            let licenses = cache.load_licenses()?;
+            Ok((cache, packages, licenses))
         });
-        let (cache, packages) = match opened {
+        let (cache, packages, scanned_licenses) = match opened {
             Ok(opened) => opened,
             Err(_) => {
                 Cache::remove(dir)?;
-                (Cache::open(dir)?, Vec::new())
+                (Cache::open(dir)?, Vec::new(), Vec::new())
             }
         };
         let mut snapshot = Snapshot::new(catalog);
@@ -53,6 +55,18 @@ impl Library {
                 .map(|scanned| (scanned.key.clone(), Arc::new(PackageSummary::of(scanned))))
                 .collect(),
         );
+        let mut licenses = Licenses::new();
+        for scanned in scanned_licenses.into_iter().filter(|scanned| scanned.parser == PARSER_VERSION) {
+            let license = match &scanned.result {
+                Ok(Some(json)) => match serde_json::from_str(json) {
+                    Ok(license) => Some(Arc::new(license)),
+                    Err(_) => continue,
+                },
+                _ => None,
+            };
+            record(&mut licenses, scanned.key, license);
+        }
+        snapshot.licenses = Arc::new(licenses);
         Ok(Self {
             store,
             cache,

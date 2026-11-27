@@ -77,3 +77,20 @@ fn a_cache_from_another_version_is_thrown_away() {
 
     assert!(cache.load_packages().unwrap().is_empty());
 }
+
+#[test]
+fn saved_licenses_load_back_and_a_rescan_replaces_the_row() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut scanned = vec![
+        ScannedLicense { key: key("aa", ""), parser: 1, result: Ok(Some("{\"vn3\":true}".into())) },
+        ScannedLicense { key: key("bb", "Outfit/manual.pdf"), parser: 1, result: Ok(None) },
+        ScannedLicense { key: key("cc", ""), parser: 1, result: Err("invalid file header".into()) },
+    ];
+    Cache::open(dir.path()).unwrap().save_licenses(&scanned).unwrap();
+    assert_eq!(Cache::open(dir.path()).unwrap().load_licenses().unwrap(), scanned);
+
+    scanned[2] = ScannedLicense { key: key("cc", ""), parser: 2, result: Ok(None) };
+    Cache::open(dir.path()).unwrap().save_licenses(&scanned[2..]).unwrap();
+
+    assert_eq!(Cache::open(dir.path()).unwrap().load_licenses().unwrap(), scanned);
+}

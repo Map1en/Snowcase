@@ -69,7 +69,7 @@ fn scanned(count: usize, cx: &mut TestAppContext) -> (Entity<LibraryStore>, impl
 }
 
 fn pending(store: &Entity<LibraryStore>, cx: &mut TestAppContext) -> usize {
-    let left = store.update(cx, |store, cx| store.change(cx, |library| Ok(library.pending_files().len() + library.pending_packages().len())));
+    let left = store.update(cx, |store, cx| store.change(cx, |library| Ok(library.pending_files().len() + library.pending_contents().len())));
     cx.run_until_parked();
     cx.foreground_executor().block_on(left).unwrap()
 }

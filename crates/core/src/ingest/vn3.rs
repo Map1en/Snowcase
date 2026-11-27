@@ -1,9 +1,10 @@
 use std::sync::LazyLock;
 
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use unicode_normalization::UnicodeNormalization;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Vn3License {
     pub license_version: String,
     pub origin: Vn3Origin,
@@ -11,20 +12,22 @@ pub struct Vn3License {
     pub notes: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Vn3Origin {
     Generator { version: String },
     Template,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Vn3Term {
     pub item: Vn3Item,
     pub answer: Vn3Answer,
     pub raw: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Vn3Item {
     PersonalUse,
     CorporateUse,
@@ -51,7 +54,8 @@ pub enum Vn3Item {
     TransferOfRights,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Vn3Answer {
     Allow,
     Deny,
@@ -81,6 +85,8 @@ pub enum Vn3Answer {
     CreditNotRequired,
     Unknown,
 }
+
+pub const PARSER_VERSION: i32 = 1;
 
 type Options = &'static [(&'static str, Vn3Answer)];
 

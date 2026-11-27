@@ -220,3 +220,20 @@ fn crc32(data: &[u8]) -> u32 {
     }
     !crc
 }
+
+#[test]
+fn a_zip_member_is_read_by_its_decoded_name_up_to_a_limit() {
+    let data = b"%PDF-1.4 license";
+    let zip = build_zip(&[
+        member("Outfit/readme.txt", b"hello", crc32fast::hash(b"hello")),
+        member("Outfit/利用規約.pdf", data, crc32fast::hash(data)),
+    ]);
+
+    let read = read_zip_member(Cursor::new(&zip), "Outfit/利用規約.pdf", 1024).unwrap();
+    assert_eq!(read, data);
+
+    let too_large = read_zip_member(Cursor::new(&zip), "Outfit/利用規約.pdf", 4);
+    assert!(too_large.is_err());
+    let missing = read_zip_member(Cursor::new(&zip), "Outfit/other.pdf", 1024).unwrap_err();
+    assert_eq!(missing.kind(), std::io::ErrorKind::NotFound);
+}

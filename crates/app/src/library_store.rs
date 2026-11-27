@@ -233,7 +233,7 @@ impl LibraryStore {
         let task = cx.spawn(async move |this, cx| {
             let files = listed.await.unwrap_or_default();
             if run_stage(&this, cx, Stage::Files, files).await {
-                let listed = this.update(cx, |this, cx| this.change(cx, |library| Ok(library.pending_packages())));
+                let listed = this.update(cx, |this, cx| this.change(cx, |library| Ok(library.pending_contents())));
                 if let Ok(listed) = listed {
                     let packages = listed.await.unwrap_or_default();
                     run_stage(&this, cx, Stage::Packages, packages).await;

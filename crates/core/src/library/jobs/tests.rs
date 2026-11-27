@@ -42,7 +42,7 @@ fn tasks(library: &Library) -> Vec<(String, Task)> {
     library
         .pending_files()
         .into_iter()
-        .chain(library.pending_packages())
+        .chain(library.pending_contents())
         .map(|work| (work.path.file_name().unwrap().to_string_lossy().into_owned(), work.task))
         .collect()
 }
@@ -50,13 +50,13 @@ fn tasks(library: &Library) -> Vec<(String, Task)> {
 fn run_all(library: &mut Library) -> Vec<Outcome> {
     let files: Vec<Outcome> = library.pending_files().into_iter().map(run).collect();
     library.apply_work(&files).unwrap();
-    let packages: Vec<Outcome> = library.pending_packages().into_iter().map(run).collect();
+    let packages: Vec<Outcome> = library.pending_contents().into_iter().map(run).collect();
     library.apply_work(&packages).unwrap();
     files.into_iter().chain(packages).collect()
 }
 
 fn idle(library: &Library) -> bool {
-    library.pending_files().is_empty() && library.pending_packages().is_empty()
+    library.pending_files().is_empty() && library.pending_contents().is_empty()
 }
 
 fn copy_is_extracted(library: &Library) -> bool {
@@ -82,7 +82,7 @@ fn a_scan_leaves_fingerprints_for_every_file_and_a_crc_for_each_extracted_copy()
             ("Outfit.zip".into(), Task::Fingerprint),
         ]
     );
-    assert!(library.pending_packages().is_empty(), "packages wait for their fingerprints");
+    assert!(library.pending_contents().is_empty(), "packages wait for their fingerprints");
 }
 
 #[test]
@@ -344,4 +344,87 @@ fn searching_finds_a_part_inside_a_package_and_says_where_it_is() {
             path: "Assets/Shop/Hair/Hair.prefab".into(),
         })
     );
+}
+
+fn license_reads(outcomes: &[Outcome]) -> Vec<(String, Option<String>)> {
+    let mut reads: Vec<_> = outcomes
+        .iter()
+        .filter_map(|outcome| match &outcome.work.task {
+            Task::License { member, .. } => {
+                Some((outcome.work.path.file_name().unwrap().to_string_lossy().into_owned(), member.clone()))
+            }
+            _ => None,
+        })
+        .collect();
+    reads.sort();
+    reads
+}
+
+#[test]
+fn license_pdfs_are_read_once_loose_or_zipped_and_unreadable_ones_are_not_retried() {
+    let data = tempfile::tempdir().unwrap();
+    let assets = tempfile::tempdir().unwrap();
+    write_zip(
+        assets.path(),
+        "Outfit.zip",
+        &[
+            ("Outfit/Outfit.unitypackage", PACKAGE),
+            ("Outfit/利用規約.pdf", b"not a pdf"),
+            ("Outfit/Readme.txt", b"readme"),
+            ("__MACOSX/Outfit/._利用規約.pdf", b"resource fork"),
+        ],
+    );
+    write(assets.path(), "Hair/Hair.unitypackage", PACKAGE);
+    write(assets.path(), "Hair/TermsOfUse_ja.PDF", b"not a pdf either");
+    write(assets.path(), "Hair/._TermsOfUse_ja.PDF", b"resource fork");
+    let mut library = Library::open(data.path()).unwrap();
+    library.scan_root(assets.path(), CodePage::Other).unwrap();
+
+    let outcomes = run_all(&mut library);
+
+    assert_eq!(
+        license_reads(&outcomes),
+        [
+            ("Outfit.zip".to_owned(), Some("Outfit/利用規約.pdf".to_owned())),
+            ("TermsOfUse_ja.PDF".to_owned(), None),
+        ]
+    );
+    assert!(library.items().iter().all(|item| library.licenses_of(item.id).is_empty()));
+    assert!(idle(&library));
+    drop(library);
+    let mut reopened = Library::open(data.path()).unwrap();
+    reopened.scan_root(assets.path(), CodePage::Other).unwrap();
+    assert!(idle(&reopened));
+}
+
+#[test]
+fn a_recognized_license_belongs_to_its_item_and_survives_reopening() {
+    let data = tempfile::tempdir().unwrap();
+    let assets = tempfile::tempdir().unwrap();
+    write(assets.path(), "Hair/Hair.unitypackage", PACKAGE);
+    write(assets.path(), "Hair/利用規約.pdf", b"stand-in for a license pdf");
+    let mut library = Library::open(data.path()).unwrap();
+    library.scan_root(assets.path(), CodePage::Other).unwrap();
+    let files: Vec<Outcome> = library.pending_files().into_iter().map(run).collect();
+    library.apply_work(&files).unwrap();
+    let text = "2. 利用条件\n A. 個人による利用\n 非営利目的に限り許可します\n3. 特記事項\n X. 特記事項\n なし\n\
+                4. 権利者\nこの利用規約は、VN3ライセンスVer.1.10のテンプレートを利用して、サンプルによって作成されました。";
+    let license = parse_vn3(text).unwrap();
+    let work = library
+        .pending_contents()
+        .into_iter()
+        .find(|work| matches!(work.task, Task::License { .. }))
+        .unwrap();
+    assert!(matches!(work.task, Task::License { member: None, .. }));
+
+    library
+        .apply_work(&[Outcome { work, result: Ok(Done::License(Ok(Some(license.clone())))) }])
+        .unwrap();
+
+    let item = library.items()[0].id;
+    assert_eq!(library.licenses_of(item), [&license]);
+    drop(library);
+    let reopened = Library::open(data.path()).unwrap();
+    assert_eq!(reopened.licenses_of(item), [&license]);
+    assert!(!reopened.pending_contents().iter().any(|work| matches!(work.task, Task::License { .. })));
 }

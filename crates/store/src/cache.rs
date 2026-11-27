@@ -32,6 +32,16 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    license (fingerprint, member) {
+        fingerprint -> Text,
+        member -> Text,
+        parser -> Integer,
+        vn3 -> Nullable<Text>,
+        error -> Nullable<Text>,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct PackageKey {
     pub fingerprint: String,
@@ -42,6 +52,13 @@ pub struct PackageKey {
 pub struct ScannedPackage {
     pub key: PackageKey,
     pub result: Result<Vec<PackageAsset>, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScannedLicense {
+    pub key: PackageKey,
+    pub parser: i32,
+    pub result: Result<Option<String>, String>,
 }
 
 #[derive(QueryableByName)]
@@ -86,6 +103,14 @@ impl Cache {
                  is_file BOOLEAN NOT NULL,
                  has_preview BOOLEAN NOT NULL,
                  PRIMARY KEY (fingerprint, member, guid)
+             );
+             CREATE TABLE IF NOT EXISTS license (
+                 fingerprint TEXT NOT NULL,
+                 member TEXT NOT NULL,
+                 parser INTEGER NOT NULL,
+                 vn3 TEXT,
+                 error TEXT,
+                 PRIMARY KEY (fingerprint, member)
              );
              PRAGMA user_version = {VERSION};"
         ))?;
@@ -135,6 +160,43 @@ impl Cache {
             Ok::<_, diesel::result::Error>(())
         })?;
         Ok(())
+    }
+
+    pub fn save_licenses(&mut self, scanned: &[ScannedLicense]) -> Result<()> {
+        self.conn.transaction(|conn| {
+            for scan in scanned {
+                let (vn3, error) = match &scan.result {
+                    Ok(vn3) => (vn3.as_deref(), None),
+                    Err(error) => (None, Some(error.as_str())),
+                };
+                diesel::replace_into(license::table)
+                    .values((
+                        license::fingerprint.eq(&scan.key.fingerprint),
+                        license::member.eq(&scan.key.member),
+                        license::parser.eq(scan.parser),
+                        license::vn3.eq(vn3),
+                        license::error.eq(error),
+                    ))
+                    .execute(conn)?;
+            }
+            Ok::<_, diesel::result::Error>(())
+        })?;
+        Ok(())
+    }
+
+    pub fn load_licenses(&mut self) -> Result<Vec<ScannedLicense>> {
+        type Row = (String, String, i32, Option<String>, Option<String>);
+        let rows: Vec<Row> = license::table
+            .order((license::fingerprint, license::member))
+            .load(&mut self.conn)?;
+        Ok(rows
+            .into_iter()
+            .map(|(fingerprint, member, parser, vn3, error)| ScannedLicense {
+                key: PackageKey { fingerprint, member },
+                parser,
+                result: error.map_or(Ok(vn3), Err),
+            })
+            .collect())
     }
 
     pub fn load_packages(&mut self) -> Result<Vec<ScannedPackage>> {

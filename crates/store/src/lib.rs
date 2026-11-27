@@ -15,7 +15,7 @@ use diesel::sql_types::{BigInt, Text};
 use diesel::sqlite::{Sqlite, SqliteConnection};
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 
-pub use cache::{Cache, PackageKey, ScannedPackage};
+pub use cache::{Cache, PackageKey, ScannedLicense, ScannedPackage};
 pub use model::*;
 use schema::*;
 

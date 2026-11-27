@@ -53,11 +53,30 @@ pub fn list_7z(mut reader: impl Read + Seek) -> Result<Vec<ArchiveEntry>, Archiv
 }
 
 pub fn list_zipped_unitypackage(reader: impl Read + Seek, member: &str) -> std::io::Result<Vec<PackageAsset>> {
+    with_member(reader, member, |entry| list_unitypackage(entry))
+}
+
+pub fn read_zip_member(reader: impl Read + Seek, member: &str, limit: u64) -> std::io::Result<Vec<u8>> {
+    with_member(reader, member, |entry| {
+        if entry.size() > limit {
+            return Err(std::io::Error::other(format!("{member} is larger than {limit} bytes")));
+        }
+        let mut bytes = Vec::new();
+        entry.take(limit).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    })
+}
+
+fn with_member<R: Read + Seek, T>(
+    reader: R,
+    member: &str,
+    read: impl FnOnce(zip::read::ZipFile<'_, R>) -> std::io::Result<T>,
+) -> std::io::Result<T> {
     let mut archive = ZipArchive::new(reader).map_err(std::io::Error::other)?;
     for index in 0..archive.len() {
         let entry = archive.by_index(index).map_err(std::io::Error::other)?;
         if decode_name(entry.name_raw()).replace('\\', "/") == member {
-            return list_unitypackage(entry);
+            return read(entry);
         }
     }
     Err(std::io::Error::new(std::io::ErrorKind::NotFound, format!("{member} is not in the archive")))

@@ -1,25 +1,30 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, Read};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use snowcase_formats::{
-    FileKind, PackageAsset, QUICK_SPAN, crc32, is_junk, list_unitypackage, list_zipped_unitypackage,
-    quick_fingerprint,
+    FileKind, PackageAsset, QUICK_SPAN, crc32, is_junk, list_unitypackage, list_zipped_unitypackage, pdf_text,
+    quick_fingerprint, read_zip_member,
 };
 use snowcase_store::{
-    BlobId, FacetKey, FacetOrigin, FacetValue, ItemId, LocationState, PackageKey, ScannedPackage, StoreError,
+    BlobId, FacetKey, FacetOrigin, FacetValue, ItemId, LocationState, PackageKey, ScannedLicense, ScannedPackage,
+    StoreError,
 };
 
 use super::Library;
-use crate::snapshot::{PackageSummary, item_node};
+use crate::ingest::vn3::{PARSER_VERSION, Vn3License, parse_vn3};
+use crate::snapshot::{PackageSummary, item_node, record};
+
+const LICENSE_LIMIT: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Task {
     Fingerprint,
     Crc { expected: u32 },
     Package { member: Option<String>, bytes: u64, fingerprint: String },
+    License { member: Option<String>, bytes: u64, fingerprint: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,7 +40,7 @@ impl Work {
         match self.task {
             Task::Fingerprint => self.size.min(2 * QUICK_SPAN),
             Task::Crc { .. } => self.size,
-            Task::Package { bytes, .. } => bytes,
+            Task::Package { bytes, .. } | Task::License { bytes, .. } => bytes,
         }
     }
 }
@@ -45,6 +50,7 @@ pub enum Done {
     Fingerprint(String),
     Crc(u32),
     Package(Result<Vec<PackageAsset>, String>),
+    License(Result<Option<Vn3License>, String>),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,6 +71,18 @@ pub fn run(work: Work) -> Outcome {
                     Some(member) => list_zipped_unitypackage(reader, member),
                 };
                 Ok(Done::Package(assets.map_err(|error| error.to_string())))
+            }
+            Task::License { member, .. } => {
+                let mut reader = BufReader::new(file);
+                let bytes = match member {
+                    None => {
+                        let mut bytes = Vec::new();
+                        reader.read_to_end(&mut bytes).map(|_| bytes)
+                    }
+                    Some(member) => read_zip_member(reader, member, LICENSE_LIMIT),
+                };
+                let text = bytes.map_err(|error| error.to_string()).and_then(|bytes| pdf_text(&bytes));
+                Ok(Done::License(text.map(|text| parse_vn3(&text))))
             }
         })
         .map_err(|error| error.to_string());
@@ -130,7 +148,7 @@ impl Library {
         work
     }
 
-    pub fn pending_packages(&self) -> Vec<Work> {
+    pub fn pending_contents(&self) -> Vec<Work> {
         let catalog = &self.snapshot.catalog;
         let present = self.present_paths();
         let scanned = |blob: BlobId, member: &str| {
@@ -149,17 +167,26 @@ impl Library {
                 continue;
             };
             let size = u64::try_from(blob.size).unwrap_or(0);
-            let mut package = |member: Option<String>, bytes: u64| {
+            let mut push = |task: Task| {
                 work.push(Work {
                     blob_id: blob.id,
                     path: path.clone(),
                     size,
-                    task: Task::Package {
-                        member,
-                        bytes,
-                        fingerprint: fingerprint.clone(),
-                    },
+                    task,
                 });
+            };
+            let package = |member: Option<String>, bytes: u64| Task::Package {
+                member,
+                bytes,
+                fingerprint: fingerprint.clone(),
+            };
+            let license = |member: Option<String>, bytes: u64| Task::License {
+                member,
+                bytes,
+                fingerprint: fingerprint.clone(),
+            };
+            let is_license = |path: &str, bytes: u64| {
+                bytes <= LICENSE_LIMIT && path.to_lowercase().ends_with(".pdf") && !is_junk(path)
             };
             if FileKind::from(blob.kind) == FileKind::UnityPackage {
                 let copy_of = catalog
@@ -169,18 +196,27 @@ impl Library {
                     .and_then(|file| Some((file.extracted_from_blob_id?, file.extracted_from_path.as_deref()?)));
                 let known = scanned(blob.id, "") || copy_of.is_some_and(|(archive, member)| scanned(archive, member));
                 if !known {
-                    package(None, size);
+                    push(package(None, size));
                 }
             }
             let path_text = path.to_string_lossy();
+            if is_license(&path_text, size) && !self.license_scanned(blob.id, "") {
+                push(license(None, size));
+            }
             if path_text.to_lowercase().ends_with(".zip")
                 && let Some(entries) = self.archives.get(&path_text)
             {
                 for entry in entries {
                     let is_package = entry.path.to_lowercase().ends_with(".unitypackage") && !is_junk(&entry.path);
                     let covered = unpacked.get(&blob.id).is_some_and(|members| members.contains(entry.path.as_str()));
-                    if is_package && !covered && !scanned(blob.id, &entry.path) {
-                        package(Some(entry.path.clone()), entry.size);
+                    if covered {
+                        continue;
+                    }
+                    if is_package && !scanned(blob.id, &entry.path) {
+                        push(package(Some(entry.path.clone()), entry.size));
+                    }
+                    if is_license(&entry.path, entry.size) && !self.license_scanned(blob.id, &entry.path) {
+                        push(license(Some(entry.path.clone()), entry.size));
                     }
                 }
             }
@@ -200,6 +236,7 @@ impl Library {
         }
         let mut touched = HashSet::new();
         let mut packages = Vec::new();
+        let mut licenses = Vec::new();
         self.store.transaction(|store| {
             for outcome in outcomes {
                 let blob_id = outcome.work.blob_id;
@@ -213,6 +250,13 @@ impl Library {
                             },
                             result: assets.clone(),
                         });
+                    }
+                    (Ok(Done::License(result)), Task::License { member, fingerprint, .. }) => {
+                        let key = PackageKey {
+                            fingerprint: fingerprint.clone(),
+                            member: member.clone().unwrap_or_default(),
+                        };
+                        licenses.push((key, result.clone()));
                     }
                     (Ok(Done::Crc(crc)), Task::Crc { expected }) => {
                         store.set_crc32(blob_id, *crc)?;
@@ -233,7 +277,23 @@ impl Library {
             Ok(())
         })?;
         self.cache.save_packages(&packages)?;
+        let scanned: Vec<ScannedLicense> = licenses
+            .iter()
+            .map(|(key, result)| ScannedLicense {
+                key: key.clone(),
+                parser: PARSER_VERSION,
+                result: result
+                    .as_ref()
+                    .map(|license| license.as_ref().and_then(|license| serde_json::to_string(license).ok()))
+                    .map_err(Clone::clone),
+            })
+            .collect();
+        self.cache.save_licenses(&scanned)?;
         let snapshot = Arc::make_mut(&mut self.snapshot);
+        let known = Arc::make_mut(&mut snapshot.licenses);
+        for (key, result) in licenses {
+            record(known, key, result.ok().flatten().map(Arc::new));
+        }
         let summaries = Arc::make_mut(&mut snapshot.packages);
         for scanned in &packages {
             summaries.insert(scanned.key.clone(), Arc::new(PackageSummary::of(scanned)));
