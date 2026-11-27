@@ -32,7 +32,7 @@ impl LibraryView {
     pub(crate) fn render_tags(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
         let theme = cx.theme();
         let own = library.item_tags(id);
-        let tags = h_flex().flex_wrap().gap_1().children(own.iter().map(|tag| {
+        let tags = h_flex().flex_wrap().gap_1().items_center().children(own.iter().map(|tag| {
             let tag_id = tag.id;
             removable(format!("remove-tag-{}", tag_id.0), format!("#{}", tag.name), false, cx).on_click(
                 cx.listener(move |this, _, _, cx| {
@@ -51,11 +51,7 @@ impl LibraryView {
         let prompt = if draft.trim().is_empty() { tr!(cx, "tag.common") } else { tr!(cx, "tag.similar") };
         let similar = !draft.trim().is_empty() && !suggestions.is_empty();
         section(tr!(cx, "item.my_tags"))
-            .child(tags)
-            .when(own.is_empty(), |this| {
-                this.child(div().text_sm().text_color(theme.muted_foreground).child(tr!(cx, "item.no_tags")))
-            })
-            .child(Input::new(&self.tag_input).id("tag-input").small())
+            .child(tags.child(div().w(px(150.)).child(Input::new(&self.tag_input).id("tag-input").small())))
             .when(!suggestions.is_empty(), |this| {
                 this.child(
                     h_flex()
@@ -82,7 +78,7 @@ impl LibraryView {
     }
 
     pub(crate) fn render_folders(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
-        let folders = h_flex().flex_wrap().gap_1().children(library.folders_of(id).into_iter().map(|folder| {
+        let folders = h_flex().flex_wrap().gap_1().items_center().children(library.folders_of(id).into_iter().map(|folder| {
             let folder_id = folder.id;
             removable(format!("remove-folder-{}", folder_id.0), folder.name.clone(), false, cx).on_click(
                 cx.listener(move |this, _, _, cx| {
@@ -91,7 +87,6 @@ impl LibraryView {
             )
         }));
         section(tr!(cx, "item.folders"))
-            .child(folders)
-            .child(Input::new(&self.folder_input).id("folder-input").small())
+            .child(folders.child(div().w(px(170.)).child(Input::new(&self.folder_input).id("folder-input").small())))
     }
 }

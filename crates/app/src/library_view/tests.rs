@@ -62,6 +62,7 @@ fn adding_a_library_folder_scans_it_and_lists_it_on_the_left(cx: &mut TestAppCon
     read(&view, cx, |_, library| {
         assert_eq!(library.shops(), [("Shop".to_owned(), 3)], "the shop comes from the package root");
     });
+    click(window, "more-filters", cx);
     choose(window, "filter-shop", 0, cx);
     assert_eq!(count(window, "asset", cx), 3);
 }
@@ -88,12 +89,17 @@ fn the_type_and_fits_selects_narrow_the_grid_and_clear_again(cx: &mut TestAppCon
     let (_, fitting) = library.values(FacetKey::Target)[0].clone();
     let (window, view) = open_library(library, cx);
 
+    click(window, "more-filters", cx);
     choose(window, "filter-category", 0, cx);
     assert_eq!(count(window, "asset", cx), in_category);
     read(&view, cx, |view, _| assert_eq!(view.filter.category.as_deref(), Some(category.as_str())));
 
     clear(window, "filter-category", cx);
     assert_eq!(count(window, "asset", cx), all);
+    choose(window, "filter-category", 0, cx);
+    click(window, "active-filter-category", cx);
+    assert_eq!(count(window, "asset", cx), all, "the chip next to the filter button clears it too");
+    assert!(!exists(window, "active-filter-category", cx));
     choose(window, "filter-target", 0, cx);
     assert_eq!(count(window, "asset", cx), fitting);
 }
@@ -145,7 +151,7 @@ fn the_plus_button_adds_a_folder(cx: &mut TestAppContext) {
 
     read(&view, cx, |_, library| {
         let names: Vec<_> = library.folder_tree().iter().map(|row| row.folder.name.clone()).collect();
-        assert_eq!(names, ["Default", "New folder 1", "New folder 2"]);
+        assert_eq!(names, ["Default", "New collection 1", "New collection 2"]);
     });
 }
 
@@ -376,7 +382,7 @@ fn removing_a_library_folder_asks_first_and_then_drops_its_items(cx: &mut TestAp
     assert_eq!(count(window, "asset", cx), 2);
 
     click(window, ("remove-root", 1usize), cx);
-    cx.simulate_prompt_answer("Remove library folder");
+    cx.simulate_prompt_answer("Remove source folder");
     assert!(exists(window, "empty-state", cx));
     assert!(!exists(window, "scope-root-1", cx));
     assert!(assets.path().join("Outfit00.unitypackage").exists());
@@ -431,4 +437,45 @@ fn scrolling_the_grid_moves_past_the_first_rows(cx: &mut TestAppContext) {
 
     assert!(!exists(window, ("asset", 0usize), cx));
     assert!((60usize..300).any(|ix| exists(window, ("asset", ix), cx)));
+}
+
+#[gpui_kit::test]
+fn the_list_view_shows_the_same_items_and_the_order_can_be_reversed(cx: &mut TestAppContext) {
+    let Fixture { library, dir: _dir } = fixtures::library(3, 20);
+    let (window, view) = open_library(library, cx);
+    let (first, last) = read(&view, cx, |view, _| (view.rows[0], *view.rows.last().unwrap()));
+
+    click(window, "view-list", cx);
+    assert_eq!(count(window, "asset", cx), 20);
+    click(window, "sort-direction", cx);
+    read(&view, cx, |view, _| assert_eq!((view.rows[0], *view.rows.last().unwrap()), (last, first)));
+
+    click(window, ("asset", 0usize), cx);
+    read(&view, cx, |view, _| assert_eq!(view.selected, Some(last)));
+    click(window, "view-grid", cx);
+    assert!(exists(window, "detail", cx));
+}
+
+#[gpui_kit::test]
+fn unlinked_items_are_marked_and_have_their_own_view(cx: &mut TestAppContext) {
+    let Fixture { mut library, dir: _dir } = fixtures::library(3, 5);
+    let id = library.items()[0].id;
+    let booth = snowcase_core::library::StorePage {
+        external_id: "7".into(),
+        name: "Sample Outfit".into(),
+        shop: "Sample Shop".into(),
+        url: "https://shop.booth.pm/items/7".into(),
+    };
+    library.link_booth(id, &booth, None).unwrap();
+    let (window, view) = open_library(library, cx);
+    let linked = read(&view, cx, |view, _| view.rows.iter().position(|row| *row == id).unwrap());
+    assert!(!exists(window, ("unlinked", linked), cx));
+    assert_eq!((0usize..5).filter(|ix| exists(window, ("unlinked", *ix), cx)).count(), 4);
+
+    click(window, "scope-unlinked", cx);
+
+    assert_eq!(count(window, "asset", cx), 4);
+    read(&view, cx, |view, _| assert!(!view.rows.contains(&id)));
+    click(window, ("asset", 0usize), cx);
+    assert!(exists(window, "booth-input", cx), "an unlinked item offers the link right in the header");
 }

@@ -1,5 +1,4 @@
 
-use gpui_kit::component::button::*;
 use gpui_kit::component::input::Input;
 use gpui_kit::component::*;
 use gpui_kit::*;
@@ -9,7 +8,6 @@ use snowcase_core::ItemId;
 
 use crate::i18n::tr;
 use crate::library_view::*;
-use crate::library_view::widgets::*;
 
 pub(crate) enum BoothStatus {
     Fetching,
@@ -37,37 +35,34 @@ impl LibraryView {
         .detach();
     }
 
-    pub(crate) fn render_booth(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Div {
+    pub(crate) fn render_booth_link(&self, id: ItemId, library: &Snapshot, cx: &Context<Self>) -> Option<Div> {
+        if library.booth_page(id).is_some() {
+            return None;
+        }
         let theme = cx.theme();
-        let page = library.booth_page(id).map(|(url, title)| (url.to_owned(), title.to_owned()));
-        section(tr!(cx, "booth.title"))
-            .children(page.map(|(url, title)| {
-                v_flex()
-                    .gap_1()
-                    .child(div().text_sm().child(title))
-                    .child(
-                        Button::new("open-booth")
-                            .ghost()
-                            .small()
-                            .icon(IconName::ExternalLink)
-                            .label(tr!(cx, "booth.open"))
-                            .on_click(move |_, _, cx| cx.open_url(&url)),
-                    )
-            }))
-            .child(Input::new(&self.booth_input).id("booth-input").small())
-            .children(self.booth_status.as_ref().map(|status| match status {
-                BoothStatus::Fetching => div()
-                    .text_xs()
-                    .text_color(theme.muted_foreground)
-                    .child(tr!(cx, "booth.fetching"))
-                    .into_any_element(),
-                BoothStatus::Failed(error) => div()
-                    .id("booth-error")
-                    .test_support()
-                    .text_xs()
-                    .text_color(theme.danger)
-                    .child(error.clone())
-                    .into_any_element(),
-            }))
+        Some(
+            v_flex()
+                .gap_2()
+                .p_3()
+                .rounded_md()
+                .border_1()
+                .border_color(theme.warning.opacity(0.4))
+                .bg(theme.warning.opacity(0.08))
+                .text_xs()
+                .child(div().text_color(theme.muted_foreground).child(tr!(cx, "booth.unlinked")))
+                .child(Input::new(&self.booth_input).id("booth-input").small())
+                .children(self.booth_status.as_ref().map(|status| match status {
+                    BoothStatus::Fetching => div()
+                        .text_color(theme.muted_foreground)
+                        .child(tr!(cx, "booth.fetching"))
+                        .into_any_element(),
+                    BoothStatus::Failed(error) => div()
+                        .id("booth-error")
+                        .test_support()
+                        .text_color(theme.danger)
+                        .child(error.clone())
+                        .into_any_element(),
+                })),
+        )
     }
 }

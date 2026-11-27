@@ -28,14 +28,25 @@ impl LibraryView {
             .border_color(theme.border)
             .bg(theme.sidebar);
 
-        column = column.child(filter_group(tr!(cx, "nav.library"), []).child(self.nav_item(
-            "scope-all".into(),
-            tr!(cx, "scope.all"),
-            0,
-            library.count(&Scope::All),
-            Scope::All,
-            cx,
-        )));
+        column = column.child(
+            filter_group(tr!(cx, "nav.library"), [])
+                .child(self.nav_item(
+                    "scope-all".into(),
+                    tr!(cx, "scope.all"),
+                    0,
+                    library.count(&Scope::All),
+                    Scope::All,
+                    cx,
+                ))
+                .child(self.nav_item(
+                    "scope-unlinked".into(),
+                    tr!(cx, "scope.unlinked"),
+                    0,
+                    library.count(&Scope::Unlinked),
+                    Scope::Unlinked,
+                    cx,
+                )),
+        );
 
         let add = Button::new("add-folder")
             .ghost()
@@ -75,26 +86,44 @@ impl LibraryView {
             let root_id = root.id;
             let doomed = library.only_in_root(root_id);
             let path = root.path.clone();
+            let group = SharedString::from(format!("root-row-{}", root.id.0));
             roots = roots.child(
                 h_flex()
+                    .group(group.clone())
                     .gap_1()
-                    .child(div().flex_1().min_w_0().child(self.nav_item(
-                        format!("scope-root-{}", root.id.0).into(),
-                        folder_name(&root.path).into(),
-                        0,
-                        count,
-                        Scope::Root(root.id),
-                        cx,
-                    )))
+                    .items_start()
                     .child(
-                        Button::new(("remove-root", root.id.0 as usize))
-                            .ghost()
-                            .xsmall()
-                            .icon(IconName::Close)
-                            .tooltip(tr!(cx, "root.remove"))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.confirm_remove_root(root_id, &path, doomed, window, cx);
-                            })),
+                        v_flex()
+                            .flex_1()
+                            .min_w_0()
+                            .child(self.nav_item(
+                                format!("scope-root-{}", root.id.0).into(),
+                                folder_name(&root.path).into(),
+                                0,
+                                count,
+                                Scope::Root(root.id),
+                                cx,
+                            ))
+                            .child(
+                                div()
+                                    .px_2()
+                                    .text_xs()
+                                    .text_color(theme.muted_foreground)
+                                    .truncate()
+                                    .child(root.path.clone()),
+                            ),
+                    )
+                    .child(
+                        div().opacity(0.).group_hover(group, |this| this.opacity(1.)).child(
+                            Button::new(("remove-root", root.id.0 as usize))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Close)
+                                .tooltip(tr!(cx, "root.remove"))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.confirm_remove_root(root_id, &path, doomed, window, cx);
+                                })),
+                        ),
                     ),
             );
         }

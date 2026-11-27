@@ -90,11 +90,11 @@ impl LibraryView {
                 .into_iter()
                 .chain(library.packages_in(file.blob.id).into_iter().map(|(member, summary)| (Some(member), summary)));
             for (member, summary) in packages {
-                let text = package_label(member, summary, cx);
                 let package = (file.blob.id, member.unwrap_or_default().to_owned());
                 let node: TreeNode = (package.0, package.1.clone(), String::new());
                 let hit = hit_path.as_deref().filter(|path| summary.paths.iter().any(|own| own == path));
                 let open = self.open_nodes.contains(&node) || hit.is_some();
+                let text = format!("{} {}", if open { "▾" } else { "▸" }, package_label(member, summary, cx));
                 list = list.child(
                     div()
                         .id(("package", package_rows))
@@ -230,5 +230,5 @@ pub(crate) fn package_label(member: Option<&str>, summary: &PackageSummary, cx: 
             parts.extend(root.clone());
         }
     }
-    format!("└ {}", parts.join(" · "))
+    parts.join(" · ")
 }

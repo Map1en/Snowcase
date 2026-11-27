@@ -1,9 +1,10 @@
 
 use gpui_kit::component::button::*;
 use gpui_kit::component::*;
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 use snowcase_core::snapshot::{Snapshot, shown_name};
-use snowcase_core::{FileKind, ItemId};
+use snowcase_core::ItemId;
 
 use crate::i18n::tr;
 
@@ -20,17 +21,6 @@ pub(crate) fn removable(id: String, label: impl Into<SharedString>, light: bool,
         .label(format!("{}  ×", label.into()))
         .tooltip(tr!(cx, "action.remove"));
     if light { button.ghost() } else { button.outline() }
-}
-
-pub(crate) fn chip(text: impl Into<SharedString>, theme: &Theme) -> Div {
-    div()
-        .px_2()
-        .py_0p5()
-        .rounded_md()
-        .text_sm()
-        .bg(theme.muted)
-        .text_color(theme.muted_foreground)
-        .child(text.into())
 }
 
 pub(crate) fn badge(text: impl Into<SharedString>, theme: &Theme) -> Div {
@@ -69,50 +59,63 @@ pub(crate) fn format_size(bytes: i64) -> String {
     }
 }
 
+pub(crate) fn placeholder_color(seed: &str) -> Hsla {
+    let hash = seed.chars().fold(0u32, |hash, c| hash.wrapping_mul(31).wrapping_add(c as u32));
+    hsla((hash % 360) as f32 / 360., 0.38, 0.55, 1.)
+}
+
+pub(crate) fn initials(title: &str) -> String {
+    title.chars().filter(|c| c.is_alphanumeric()).take(2).flat_map(char::to_uppercase).collect()
+}
+
+pub(crate) fn main_extension(library: &Snapshot, id: ItemId) -> Option<String> {
+    let name = shown_name(library.main_file(id)?);
+    name.rsplit_once('.').map(|(_, extension)| extension.to_uppercase())
+}
+
+pub(crate) fn placeholder_seed(library: &Snapshot, id: ItemId) -> String {
+    let shop = library.facts(id).and_then(|facts| facts.shop.clone());
+    shop.or_else(|| library.item(id).map(|item| item.title.clone())).unwrap_or_default()
+}
+
 pub(crate) fn cover(library: &Snapshot, id: ItemId, height: Pixels, theme: &Theme) -> Div {
-    if let Some(path) = library.cover_path(id) {
-        return div()
-            .w_full()
-            .h(height)
-            .flex_shrink_0()
-            .rounded_md()
-            .overflow_hidden()
-            .bg(theme.muted)
-            .child(img(path).size_full().object_fit(ObjectFit::Cover));
-    }
-    let file = library.main_file(id);
-    let file_name = file.map(shown_name);
-    let kind = file
-        .and_then(|file| library.files(id).into_iter().find(|view| view.file.blob_id == file.blob_id))
-        .map(|view| FileKind::from(view.blob.kind));
-    let icon = match kind {
-        Some(FileKind::UnityPackage | FileKind::Model) => IconName::Frame,
-        Some(FileKind::Archive) => IconName::FolderClosed,
-        Some(FileKind::Image) => IconName::GalleryVerticalEnd,
-        Some(FileKind::Other) | None => IconName::File,
-    };
-    let extension = file_name
-        .and_then(|name| name.rsplit_once('.'))
-        .map(|(_, extension)| extension.to_uppercase());
-    v_flex()
+    let frame = div()
+        .relative()
         .w_full()
         .h(height)
         .flex_shrink_0()
-        .gap_1()
-        .p_2()
         .rounded_md()
-        .bg(theme.muted)
+        .overflow_hidden();
+    if let Some(path) = library.cover_path(id) {
+        return frame.bg(theme.muted).child(img(path).size_full().object_fit(ObjectFit::Cover));
+    }
+    let title = library.item(id).map(|item| initials(&item.title)).unwrap_or_default();
+    let extension = main_extension(library, id);
+    let big = height > px(160.);
+    frame
+        .flex()
         .items_center()
         .justify_center()
-        .text_color(theme.muted_foreground)
-        .child(Icon::new(icon).size(px(28.)))
-        .children(extension.map(|extension| div().text_xs().font_semibold().child(extension)))
-        .children(file_name.map(|name| {
+        .bg(placeholder_color(&placeholder_seed(library, id)))
+        .child(
             div()
-                .w_full()
+                .when(big, |this| this.text_3xl())
+                .when(!big, |this| this.text_2xl())
+                .font_bold()
+                .text_color(gpui_kit::white().opacity(0.85))
+                .child(title),
+        )
+        .children(extension.map(|extension| {
+            div()
+                .absolute()
+                .left_1p5()
+                .bottom_1p5()
+                .px_1()
+                .rounded_sm()
                 .text_xs()
-                .text_center()
-                .line_clamp(2)
-                .child(name.to_owned())
+                .font_semibold()
+                .bg(gpui_kit::black().opacity(0.4))
+                .text_color(gpui_kit::white())
+                .child(extension)
         }))
 }

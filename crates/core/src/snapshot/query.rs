@@ -9,6 +9,7 @@ use crate::ingest::names::tag_key;
 pub enum Scope {
     #[default]
     All,
+    Unlinked,
     Folder(FolderId),
     Root(RootId),
 }
@@ -88,6 +89,7 @@ impl Snapshot {
         };
         match scope {
             Scope::All => true,
+            Scope::Unlinked => self.booth_page(id).is_none(),
             Scope::Folder(folder) => facts.folders.contains(folder),
             Scope::Root(root) => facts.roots.contains(root),
         }

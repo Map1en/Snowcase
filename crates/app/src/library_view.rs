@@ -59,6 +59,8 @@ pub struct LibraryView {
     store: Entity<LibraryStore>,
     filter: Filter,
     sort: SortKey,
+    reversed: bool,
+    list_view: bool,
     nav_open: bool,
     more_filters: bool,
     rows: Vec<ItemId>,
@@ -196,6 +198,8 @@ impl LibraryView {
             store,
             filter: Filter::default(),
             sort: SortKey::Added,
+            reversed: false,
+            list_view: false,
             nav_open: true,
             more_filters: false,
             rows: Vec::new(),
@@ -241,6 +245,26 @@ impl LibraryView {
                 self.filter.tag = value.and_then(|value| value.parse().ok()).map(snowcase_core::TagId);
             }
         }
+    }
+
+    pub(crate) fn clear_filter(&mut self, field: FilterField, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((_, select)) = self.selects.iter().find(|(candidate, _)| *candidate == field) {
+            select.update(cx, |select, cx| select.set_selected_index(None, window, cx));
+        }
+        self.set_filter(field, None);
+        self.refresh(cx);
+    }
+
+    pub(crate) fn active_filters(&self) -> Vec<(FilterField, String)> {
+        [
+            (FilterField::Category, self.filter.category.clone()),
+            (FilterField::Target, self.filter.target.clone()),
+            (FilterField::Shop, self.filter.shop.clone()),
+            (FilterField::Tag, self.filter.tag.map(|tag| tag.0.to_string())),
+        ]
+        .into_iter()
+        .filter_map(|(field, value)| Some((field, value?)))
+        .collect()
     }
 
     pub(crate) fn refresh_choices(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -303,6 +327,9 @@ impl LibraryView {
             .into_iter()
             .map(|item| item.id)
             .collect();
+        if self.reversed {
+            self.rows.reverse();
+        }
         self.selected = self.selected.filter(|id| library.item(*id).is_some());
         cx.notify();
     }

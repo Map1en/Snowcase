@@ -472,8 +472,13 @@ fn linking_a_booth_page_sets_title_shop_link_and_a_stored_cover() {
         mime: "image/jpeg".into(),
     };
 
+    let unlinked = |library: &Library| library.query(&Filter::scope(Scope::Unlinked), SortKey::Name).iter().any(|item| item.id == gloves);
+    assert!(unlinked(&library));
+
     library.link_booth(gloves, &booth, Some(&picture)).unwrap();
     library.link_booth(gloves, &booth, Some(&picture)).unwrap();
+
+    assert!(!unlinked(&library), "a linked item leaves the unlinked view");
 
     assert_eq!(library.item(gloves).unwrap().title, "Gloves", "the title stays the user's");
     assert_eq!(library.facts(gloves).unwrap().shop.as_deref(), Some("Sample Shop"));

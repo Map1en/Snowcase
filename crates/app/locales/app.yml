@@ -30,17 +30,17 @@ scope.all:
   ja: すべて
   ko: 전체
 folder.new:
-  en: New folder
-  zh-CN: 新建文件夹
-  zh-TW: 新增資料夾
-  ja: 新しいフォルダー
-  ko: 새 폴더
+  en: New collection
+  zh-CN: 新建收藏夹
+  zh-TW: 新增收藏夾
+  ja: 新しいコレクション
+  ko: 새 컬렉션
 folder.new_name:
-  en: New folder %{n}
-  zh-CN: 新建文件夹 %{n}
-  zh-TW: 新資料夾 %{n}
-  ja: 新しいフォルダー %{n}
-  ko: 새 폴더 %{n}
+  en: New collection %{n}
+  zh-CN: 新建收藏夹 %{n}
+  zh-TW: 新收藏夾 %{n}
+  ja: 新しいコレクション %{n}
+  ko: 새 컬렉션 %{n}
 search.placeholder:
   en: Search titles, tags and files
   zh-CN: 搜索标题、标签和文件
@@ -48,17 +48,17 @@ search.placeholder:
   ja: タイトル・タグ・ファイルを検索
   ko: 제목, 태그, 파일 검색
 tag.placeholder:
-  en: Add a tag
-  zh-CN: 添加标签
-  zh-TW: 新增標籤
-  ja: タグを追加
-  ko: 태그 추가
+  en: + Tag
+  zh-CN: ＋ 标签
+  zh-TW: ＋ 標籤
+  ja: ＋ タグ
+  ko: ＋ 태그
 folder.placeholder:
-  en: Add to a folder
-  zh-CN: 添加到文件夹
-  zh-TW: 加入資料夾
-  ja: フォルダーに追加
-  ko: 폴더에 추가
+  en: + Collection
+  zh-CN: ＋ 加入收藏夹
+  zh-TW: ＋ 加入收藏夾
+  ja: ＋ コレクション
+  ko: ＋ 컬렉션
 sort.newest:
   en: Newest
   zh-CN: 最新
@@ -79,8 +79,8 @@ action.remove:
   ko: 제거
 status.count:
   en: "%{shown} of %{total} items"
-  zh-CN: 共 %{total} 项，显示 %{shown} 项
-  zh-TW: 共 %{total} 項，顯示 %{shown} 項
+  zh-CN: 共 %{total} 项 · 显示 %{shown} 项
+  zh-TW: 共 %{total} 項 · 顯示 %{shown} 項
   ja: "%{total} 件中 %{shown} 件"
   ko: 전체 %{total}개 중 %{shown}개
 status.adding:
@@ -102,11 +102,11 @@ empty.no_library:
   ja: Snowcase でライブラリを開けませんでした
   ko: Snowcase에서 라이브러리를 열 수 없습니다
 empty.library:
-  en: Add a library folder on the left, or drop files here
-  zh-CN: 在左边添加库文件夹，或者把文件拖到这里
-  zh-TW: 在左邊新增庫資料夾，或把檔案拖曳到這裡
-  ja: 左でライブラリフォルダーを追加するか、ここにファイルをドロップしてください
-  ko: 왼쪽에서 라이브러리 폴더를 추가하거나 파일을 여기에 끌어다 놓으세요
+  en: Add a source folder on the left, or drop files here
+  zh-CN: 在左边添加来源目录，或者把文件拖到这里
+  zh-TW: 在左邊新增來源目錄，或把檔案拖曳到這裡
+  ja: 左でソースフォルダーを追加するか、ここにファイルをドロップしてください
+  ko: 왼쪽에서 소스 폴더를 추가하거나 파일을 여기에 끌어다 놓으세요
 empty.no_results:
   en: Nothing matches this filter
   zh-CN: 没有符合筛选条件的项目
@@ -120,11 +120,11 @@ item.tags:
   ja: タグ
   ko: 태그
 item.folders:
-  en: Folders
-  zh-CN: 文件夹
-  zh-TW: 資料夾
-  ja: フォルダー
-  ko: 폴더
+  en: Collections
+  zh-CN: 收藏夹
+  zh-TW: 收藏夾
+  ja: コレクション
+  ko: 컬렉션
 item.files:
   en: Files
   zh-CN: 文件
@@ -204,11 +204,11 @@ filter.shop:
   ja: ショップ
   ko: 상점
 filter.more:
-  en: More filters
-  zh-CN: ＋筛选
-  zh-TW: ＋篩選
-  ja: ＋絞り込み
-  ko: ＋필터
+  en: Filter
+  zh-CN: 筛选
+  zh-TW: 篩選
+  ja: 絞り込み
+  ko: 필터
 nav.toggle:
   en: Show or hide the sidebar
   zh-CN: 收起或展开侧栏
@@ -216,17 +216,17 @@ nav.toggle:
   ja: サイドバーの表示を切り替え
   ko: 사이드바 표시 전환
 root.title:
-  en: Library folders
-  zh-CN: 库文件夹
-  zh-TW: 庫資料夾
-  ja: ライブラリフォルダー
-  ko: 라이브러리 폴더
+  en: Source folders
+  zh-CN: 来源目录
+  zh-TW: 來源目錄
+  ja: ソースフォルダー
+  ko: 소스 폴더
 root.add:
-  en: Add library folder
-  zh-CN: 添加库文件夹
-  zh-TW: 新增庫資料夾
-  ja: ライブラリフォルダーを追加
-  ko: 라이브러리 폴더 추가
+  en: Add source folder
+  zh-CN: 添加来源目录
+  zh-TW: 新增來源目錄
+  ja: ソースフォルダーを追加
+  ko: 소스 폴더 추가
 status.background:
   en: Organizing files %{done} / %{total}
   zh-CN: 整理文件 %{done} / %{total}
@@ -275,12 +275,6 @@ item.attributes:
   zh-TW: 屬性
   ja: 属性
   ko: 속성
-item.attributes_hint:
-  en: recognized automatically, editable
-  zh-CN: 自动识别，可改
-  zh-TW: 自動識別，可修改
-  ja: 自動認識・変更可
-  ko: 자동 인식, 수정 가능
 item.no_attributes:
   en: Nothing recognized yet
   zh-CN: 还没有识别出属性
@@ -293,12 +287,6 @@ item.my_tags:
   zh-TW: 我的標籤
   ja: マイタグ
   ko: 내 태그
-item.no_tags:
-  en: No tags yet
-  zh-CN: 还没有标签
-  zh-TW: 還沒有標籤
-  ja: タグはまだありません
-  ko: 아직 태그가 없습니다
 tag.similar:
   en: Similar tags exist, use one?
   zh-CN: 已有相近的标签，用它吗：
@@ -384,17 +372,17 @@ action.merge_here:
   ja: ここに統合
   ko: 여기로 합치기
 root.rescan:
-  en: Scan library folders now
-  zh-CN: 立即扫描库文件夹
-  zh-TW: 立即掃描庫資料夾
-  ja: ライブラリフォルダーを今すぐスキャン
-  ko: 라이브러리 폴더 지금 스캔
+  en: Scan source folders now
+  zh-CN: 立即扫描来源目录
+  zh-TW: 立即掃描來源目錄
+  ja: ソースフォルダーを今すぐスキャン
+  ko: 소스 폴더 지금 스캔
 status.scanning:
-  en: Scanning library folders…
-  zh-CN: 正在扫描库文件夹…
-  zh-TW: 正在掃描庫資料夾…
-  ja: ライブラリフォルダーをスキャン中…
-  ko: 라이브러리 폴더 스캔 중…
+  en: Scanning source folders…
+  zh-CN: 正在扫描来源目录…
+  zh-TW: 正在掃描來源目錄…
+  ja: ソースフォルダーをスキャン中…
+  ko: 소스 폴더 스캔 중…
 hit.package:
   en: "Match: %{name} (in %{package})"
   zh-CN: 命中：%{name}（在 %{package} 里）
@@ -408,11 +396,11 @@ tree.more:
   ja: ほか %{count} 件
   ko: "%{count}개 더"
 root.remove:
-  en: Remove library folder
-  zh-CN: 移除库文件夹
-  zh-TW: 移除庫資料夾
-  ja: ライブラリフォルダーを外す
-  ko: 라이브러리 폴더 제거
+  en: Remove source folder
+  zh-CN: 移除来源目录
+  zh-TW: 移除來源目錄
+  ja: ソースフォルダーを外す
+  ko: 소스 폴더 제거
 root.remove_confirm:
   en: "Remove %{path} from the library?"
   zh-CN: 把 %{path} 从资料库里移除吗？
@@ -425,12 +413,6 @@ root.remove_detail:
   zh-TW: 只在這個資料夾裡的 %{count} 個商品會被移除，它們的標籤和備註也會一起刪掉。磁碟上的檔案不動。
   ja: このフォルダーにしかない %{count} 個の商品が、タグやメモと一緒にライブラリから消えます。ディスク上のファイルはそのままです。
   ko: 이 폴더에만 있는 상품 %{count}개가 태그와 메모와 함께 제거됩니다. 디스크의 파일은 그대로입니다.
-booth.title:
-  en: BOOTH
-  zh-CN: BOOTH
-  zh-TW: BOOTH
-  ja: BOOTH
-  ko: BOOTH
 booth.placeholder:
   en: Paste a BOOTH item link, then Enter
   zh-CN: 粘贴 BOOTH 商品链接，回车
@@ -455,3 +437,69 @@ booth.not_a_link:
   zh-TW: 這不是 BOOTH 商品連結
   ja: BOOTH の商品リンクではありません
   ko: BOOTH 상품 링크가 아닙니다
+scope.unlinked:
+  en: Not linked to BOOTH
+  zh-CN: 未关联 BOOTH
+  zh-TW: 未關聯 BOOTH
+  ja: BOOTH 未リンク
+  ko: BOOTH 미연결
+facet.part:
+  en: Part
+  zh-CN: 部件
+  zh-TW: 部件
+  ja: パーツ
+  ko: 파츠
+facet.color:
+  en: Color
+  zh-CN: 颜色
+  zh-TW: 顏色
+  ja: カラー
+  ko: 색상
+facet.version:
+  en: Version
+  zh-CN: 版本
+  zh-TW: 版本
+  ja: バージョン
+  ko: 버전
+facet.role:
+  en: Role
+  zh-CN: 用途
+  zh-TW: 用途
+  ja: 用途
+  ko: 용도
+sort.direction:
+  en: Reverse the order
+  zh-CN: 切换升降序
+  zh-TW: 切換升降序
+  ja: 並び順を反転
+  ko: 정렬 순서 반전
+view.grid:
+  en: Grid
+  zh-CN: 网格
+  zh-TW: 網格
+  ja: グリッド
+  ko: 그리드
+view.list:
+  en: List
+  zh-CN: 列表
+  zh-TW: 列表
+  ja: リスト
+  ko: 목록
+booth.unlinked:
+  en: Not linked to BOOTH yet. Linking fetches the cover, the item name and the shop.
+  zh-CN: 还没有关联 BOOTH 商品，关联后会获取封面、商品名和店铺。
+  zh-TW: 還沒有關聯 BOOTH 商品，關聯後會取得封面、商品名和店鋪。
+  ja: BOOTH の商品とまだリンクしていません。リンクするとカバー・商品名・ショップを取得します。
+  ko: 아직 BOOTH 상품과 연결되지 않았습니다. 연결하면 커버, 상품명, 상점을 가져옵니다.
+booth.linked:
+  en: Linked
+  zh-CN: 已关联
+  zh-TW: 已關聯
+  ja: リンク済み
+  ko: 연결됨
+item.type:
+  en: Type
+  zh-CN: 类型
+  zh-TW: 類型
+  ja: 種類
+  ko: 유형
